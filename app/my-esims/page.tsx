@@ -303,10 +303,70 @@ export default function MyEsimsPage() {
       }
     }
 
+    async function recoverPaidOrders() {
+      if (!initData) {
+        return;
+      }
+
+      try {
+        const response =
+          await fetch(
+            "/api/esim/recover",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  initData,
+                }),
+
+              cache:
+                "no-store",
+            }
+          );
+
+        const data =
+          await response.json();
+
+        if (!response.ok) {
+          console.error(
+            "eSIM recovery failed:",
+            data
+          );
+        }
+      } catch (error) {
+        console.error(
+          "eSIM recovery request error:",
+          error
+        );
+      }
+    }
+
     async function run() {
+      /*
+       * Сначала восстанавливаем оплаченные
+       * заказы, которые могли зависнуть
+       * после Telegram payment webhook.
+       */
+      await recoverPaidOrders();
+
+      /*
+       * После recovery заново получаем
+       * актуальный список eSIM.
+       */
       const list =
         await loadEsims();
 
+      /*
+       * Если поставщик ещё готовит профиль,
+       * существующая логика дотягивает его.
+       */
       await syncPending(
         list
       );

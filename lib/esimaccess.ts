@@ -1,24 +1,66 @@
-type EsimAccessBalanceResponse = {
-  success: boolean;
-  errorCode?: string | null;
-  errorMsg?: string | null;
-  obj?: {
-    balance?: number;
-  };
-};
-
-type EsimAccessOrderResponse = {
-  success: boolean;
-  errorCode?: string | null;
-  errorMsg?: string | null;
-  obj?: {
-    orderNo?: string;
-    transactionId?: string;
-  };
-};
-
 const ESIM_ACCESS_API =
   "https://api.esimaccess.com/api/v1/open";
+
+type BaseResponse = {
+  success: boolean;
+  errorCode?: string | null;
+  errorMsg?: string | null;
+};
+
+type BalanceResponse =
+  BaseResponse & {
+    obj?: {
+      balance?: number;
+    };
+  };
+
+type OrderResponse =
+  BaseResponse & {
+    obj?: {
+      orderNo?: string;
+      transactionId?: string;
+    };
+  };
+
+export type EsimProfile = {
+  orderNo?: string;
+  esimTranNo?: string;
+  iccid?: string;
+  imsi?: string;
+
+  /*
+   * Полная строка активации:
+   * LPA:1$SM-DP+$MATCHING_CODE
+   */
+  ac?: string;
+
+  qrCodeUrl?: string;
+
+  smdpStatus?: string;
+  esimStatus?: string;
+
+  expiredTime?: string;
+
+  totalVolume?: number;
+  orderUsage?: number;
+
+  apn?: string;
+
+  packageList?: Array<{
+    packageCode?: string;
+    packageName?: string;
+    duration?: number;
+    volume?: number;
+    locationCode?: string;
+  }>;
+};
+
+type EsimListResponse =
+  BaseResponse & {
+    obj?: {
+      esimList?: EsimProfile[];
+    };
+  };
 
 function getHeaders() {
   const accessCode =
@@ -39,18 +81,7 @@ function getHeaders() {
   };
 }
 
-/*
- * eSIMAccess хранит денежные значения
- * в единицах 1 / 10000 USD.
- *
- * Например:
- *
- * 500000 = $50.00
- * 110000 = $11.00
- * 1310000 = $131.00
- * 5000000 = $500.00
- */
-function moneyFromEsimAccess(
+function fromSupplierMoney(
   value: number
 ) {
   return (
@@ -59,14 +90,7 @@ function moneyFromEsimAccess(
   );
 }
 
-/*
- * Обратное преобразование:
- *
- * $0.30 -> 3000
- * $1.19 -> 11900
- * $50.00 -> 500000
- */
-function moneyToEsimAccess(
+function toSupplierMoney(
   value: number
 ) {
   return Math.round(
@@ -74,6 +98,12 @@ function moneyToEsimAccess(
       10000
   );
 }
+
+/*
+ * ======================================================
+ * BALANCE
+ * ======================================================
+ */
 
 export async function getEsimAccessBalance() {
   const response =
@@ -95,7 +125,7 @@ export async function getEsimAccessBalance() {
 
   const result =
     (await response.json()) as
-      EsimAccessBalanceResponse;
+      BalanceResponse;
 
   if (
     !response.ok ||
@@ -108,52 +138,42 @@ export async function getEsimAccessBalance() {
 
     throw new Error(
       result.errorMsg ||
-        "Не удалось получить баланс eSIMAccess"
+        "Failed to get eSIMAccess balance"
     );
   }
 
-  const rawBalance =
+  return fromSupplierMoney(
     Number(
       result.obj?.balance ??
         0
-    );
-
-  return moneyFromEsimAccess(
-    rawBalance
+    )
   );
 }
+
+/*
+ * ======================================================
+ * ORDER
+ * ======================================================
+ */
 
 export async function orderEsim(params: {
   transactionId: string;
   packageCode: string;
-  supplierPriceRaw?: number;
-  supplierCost?: number;
+  supplierCost: number;
 }) {
-  let supplierPriceRaw =
-    params.supplierPriceRaw;
+  const rawPrice =
+    toSupplierMoney(
+      params.supplierCost
+    );
 
   if (
-    supplierPriceRaw ===
-      undefined &&
-    params.supplierCost !==
-      undefined
-  ) {
-    supplierPriceRaw =
-      moneyToEsimAccess(
-        params.supplierCost
-      );
-  }
-
-  if (
-    supplierPriceRaw ===
-      undefined ||
     !Number.isFinite(
-      supplierPriceRaw
+      rawPrice
     ) ||
-    supplierPriceRaw <= 0
+    rawPrice <= 0
   ) {
     throw new Error(
-      "Некорректная стоимость eSIM"
+      "Invalid supplier price"
     );
   }
 
@@ -171,8 +191,15 @@ export async function orderEsim(params: {
             transactionId:
               params.transactionId,
 
+            /*
+             * Передаём цену.
+             * Если цена поставщика
+             * изменилась, заказ должен
+             * завершиться ошибкой вместо
+             * неожиданного списания.
+             */
             amount:
-              supplierPriceRaw,
+              rawPrice,
 
             packageInfoList: [
               {
@@ -182,7 +209,7 @@ export async function orderEsim(params: {
                 count: 1,
 
                 price:
-                  supplierPriceRaw,
+                  rawPrice,
               },
             ],
           }),
@@ -194,7 +221,7 @@ export async function orderEsim(params: {
 
   const result =
     (await response.json()) as
-      EsimAccessOrderResponse;
+      OrderResponse;
 
   if (
     !response.ok ||
@@ -207,7 +234,7 @@ export async function orderEsim(params: {
 
     throw new Error(
       result.errorMsg ||
-        "eSIMAccess не смог создать заказ"
+        "eSIMAccess order failed"
     );
   }
 
@@ -216,7 +243,7 @@ export async function orderEsim(params: {
 
   if (!orderNo) {
     throw new Error(
-      "eSIMAccess не вернул orderNo"
+      "eSIMAccess did not return orderNo"
     );
   }
 
@@ -227,5 +254,203 @@ export async function orderEsim(params: {
       result.obj
         ?.transactionId ??
       params.transactionId,
+  };
+}
+
+/*
+ * ======================================================
+ * QUERY ALLOCATED PROFILE
+ * ======================================================
+ *
+ * После покупки профиль может
+ * появиться не мгновенно.
+ *
+ * Ищем именно по orderNo.
+ */
+
+export async function queryEsimByOrderNo(
+  orderNo: string
+) {
+  const response =
+    await fetch(
+      `${ESIM_ACCESS_API}/esim/list`,
+      {
+        method: "POST",
+
+        headers:
+          getHeaders(),
+
+        body:
+          JSON.stringify({
+            orderNo,
+
+            pager: {
+              pageNum: 1,
+              pageSize: 20,
+            },
+          }),
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const result =
+    (await response.json()) as
+      EsimListResponse;
+
+  if (
+    !response.ok ||
+    !result.success
+  ) {
+    console.error(
+      "eSIMAccess profile query error:",
+      result
+    );
+
+    throw new Error(
+      result.errorMsg ||
+        "Failed to query eSIM profile"
+    );
+  }
+
+  const profiles =
+    result.obj?.esimList ??
+    [];
+
+  if (
+    profiles.length === 0
+  ) {
+    return null;
+  }
+
+  /*
+   * Дополнительно убеждаемся,
+   * что профиль относится
+   * к нужному orderNo.
+   */
+  return (
+    profiles.find(
+      (profile) =>
+        profile.orderNo ===
+        orderNo
+    ) ??
+    profiles[0]
+  );
+}
+
+/*
+ * ======================================================
+ * WAIT FOR PROFILE
+ * ======================================================
+ *
+ * Используем polling вместо
+ * слепого sleep на 30 секунд.
+ */
+
+export async function waitForEsimProfile(
+  orderNo: string,
+  options?: {
+    attempts?: number;
+    delayMs?: number;
+  }
+) {
+  const attempts =
+    options?.attempts ??
+    6;
+
+  const delayMs =
+    options?.delayMs ??
+    5000;
+
+  for (
+    let attempt = 1;
+    attempt <= attempts;
+    attempt++
+  ) {
+    const profile =
+      await queryEsimByOrderNo(
+        orderNo
+      );
+
+    if (
+      profile?.iccid &&
+      (
+        profile.ac ||
+        profile.qrCodeUrl
+      )
+    ) {
+      return profile;
+    }
+
+    if (
+      attempt <
+      attempts
+    ) {
+      await new Promise(
+        (resolve) =>
+          setTimeout(
+            resolve,
+            delayMs
+          )
+      );
+    }
+  }
+
+  /*
+   * Это НЕ означает, что покупка
+   * провалилась.
+   *
+   * Профиль мог просто ещё
+   * не успеть выделиться.
+   */
+  return null;
+}
+
+/*
+ * ======================================================
+ * PARSE ACTIVATION CODE
+ * ======================================================
+ *
+ * Пример:
+ *
+ * LPA:1$rsp.example.com$ABC123
+ *
+ * smdpAddress = rsp.example.com
+ * activationCode = ABC123
+ */
+
+export function parseActivationCode(
+  ac?: string | null
+) {
+  if (!ac) {
+    return {
+      smdpAddress: null,
+      activationCode: null,
+    };
+  }
+
+  const parts =
+    ac.split("$");
+
+  if (
+    parts.length < 3
+  ) {
+    return {
+      smdpAddress: null,
+      activationCode:
+        ac,
+    };
+  }
+
+  return {
+    smdpAddress:
+      parts[1] || null,
+
+    activationCode:
+      parts
+        .slice(2)
+        .join("$") ||
+      null,
   };
 }

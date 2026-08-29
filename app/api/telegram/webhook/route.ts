@@ -2,6 +2,10 @@ import {
   getSupabaseAdmin,
 } from "@/lib/supabase-admin";
 
+import {
+  issueEsimForOrder,
+} from "@/lib/esim-issuance";
+
 type TelegramPreCheckoutQuery = {
   id: string;
 
@@ -559,6 +563,41 @@ export async function POST(
         console.error(
           "Order update error:",
           orderUpdateError
+        );
+
+        return Response.json({
+          ok: true,
+        });
+      }
+
+      /*
+       * ======================================================
+       * 6. АВТОМАТИЧЕСКИЙ ВЫПУСК eSIM
+       * ======================================================
+       *
+       * Оплата уже подтверждена Telegram.
+       * Здесь создаём заказ у eSIMAccess.
+       *
+       * Профиль долго не ждём —
+       * supplier_order_id сохраняется сразу.
+       */
+      try {
+        const issueResult =
+          await issueEsimForOrder(
+            orderId,
+            {
+              waitForProfile: false,
+            }
+          );
+
+        console.log(
+          "Automatic eSIM issuance:",
+          issueResult
+        );
+      } catch (issueError) {
+        console.error(
+          "Automatic eSIM issuance error:",
+          issueError
         );
       }
 

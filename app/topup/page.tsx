@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+
 import {
   useEffect,
   useMemo,
   useState,
 } from "react";
+
 import {
   BackButton,
   Brand,
@@ -19,35 +21,60 @@ type TopupPackage = {
   name: string;
   dataLabel: string;
   durationLabel: string;
-  duration?: number;
-  durationUnit?: string;
   amount: number;
   currency: string;
   networks: string[];
-  speed?: string | null;
   countryCode?: string | null;
 };
 
-function getTelegram() {
-  if (typeof window === "undefined") {
+type TelegramWebApp = {
+  initData?: string;
+
+  ready?: () => void;
+
+  expand?: () => void;
+
+  openInvoice?: (
+    url: string,
+    callback?: (
+      status:
+        | "paid"
+        | "cancelled"
+        | "failed"
+        | "pending"
+    ) => void
+  ) => void;
+
+  openTelegramLink?: (
+    url: string
+  ) => void;
+};
+
+function telegram():
+  TelegramWebApp | null {
+  if (
+    typeof window ===
+    "undefined"
+  ) {
     return null;
   }
 
   return (
     window as typeof window & {
       Telegram?: {
-        WebApp?: {
-          initData?: string;
-          ready?: () => void;
-          expand?: () => void;
-        };
+        WebApp?: TelegramWebApp;
       };
     }
-  ).Telegram?.WebApp;
+  ).Telegram?.WebApp ?? null;
 }
 
-function flag(code?: string | null) {
-  if (!code || code.length !== 2) {
+function flag(
+  code?: string | null
+) {
+  if (
+    !code ||
+    code.length !== 2
+  ) {
     return "🌍";
   }
 
@@ -57,9 +84,20 @@ function flag(code?: string | null) {
       /./g,
       (char) =>
         String.fromCodePoint(
-          127397 + char.charCodeAt(0)
+          127397 +
+            char.charCodeAt(0)
         )
     );
+}
+
+function sleep(ms: number) {
+  return new Promise(
+    (resolve) =>
+      setTimeout(
+        resolve,
+        ms
+      )
+  );
 }
 
 export default function TopupPage() {
@@ -69,92 +107,537 @@ export default function TopupPage() {
   const [error, setError] =
     useState("");
 
-  const [packages, setPackages] =
-    useState<TopupPackage[]>([]);
+  const [
+    packages,
+    setPackages,
+  ] = useState<
+    TopupPackage[]
+  >([]);
 
-  const [countryCode, setCountryCode] =
-    useState<string | null>(null);
+  const [
+    countryCode,
+    setCountryCode,
+  ] =
+    useState<
+      string | null
+    >(null);
 
-  const esimId = useMemo(() => {
-    if (typeof window === "undefined") {
-      return "";
-    }
+  const [
+    buyingSlug,
+    setBuyingSlug,
+  ] =
+    useState<
+      string | null
+    >(null);
 
-    return new URLSearchParams(
-      window.location.search
-    ).get("esim") ?? "";
-  }, []);
+  const [
+    success,
+    setSuccess,
+  ] = useState(false);
+
+  const [
+    statusMessage,
+    setStatusMessage,
+  ] = useState("");
+
+  const esimId =
+    useMemo(() => {
+      if (
+        typeof window ===
+        "undefined"
+      ) {
+        return "";
+      }
+
+      return (
+        new URLSearchParams(
+          window.location.search
+        ).get("esim") ?? ""
+      );
+    }, []);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const telegram = getTelegram();
+    const load =
+      async () => {
+        try {
+          const tg =
+            telegram();
 
-        telegram?.ready?.();
-        telegram?.expand?.();
+          tg?.ready?.();
+          tg?.expand?.();
 
-        if (!esimId) {
+          if (!esimId) {
+            throw new Error(
+              "Не выбрана eSIM"
+            );
+          }
+
+          const initData =
+            tg?.initData ?? "";
+
+          if (!initData) {
+            throw new Error(
+              "Открой WYLD ROAM внутри Telegram"
+            );
+          }
+
+          const response =
+            await fetch(
+              "/api/esim/topups",
+              {
+                method:
+                  "POST",
+
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+
+                body:
+                  JSON.stringify({
+                    initData,
+                    esimId,
+                  }),
+              }
+            );
+
+          const data =
+            await response.json();
+
+          if (
+            !response.ok ||
+            !data.ok
+          ) {
+            throw new Error(
+              data?.error ||
+                "Не удалось загрузить пакеты"
+            );
+          }
+
+          setPackages(
+            Array.isArray(
+              data.packages
+            )
+              ? data.packages
+              : []
+          );
+
+          setCountryCode(
+            data?.esim
+              ?.countryCode ??
+              null
+          );
+        } catch (error) {
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Ошибка загрузки"
+          );
+        } finally {
+          setLoading(
+            false
+          );
+        }
+      };
+
+    load();
+  }, [esimId]);
+
+  const pollStatus =
+    async (
+      topupId: string
+    ) => {
+      const tg =
+        telegram();
+
+      const initData =
+        tg?.initData ?? "";
+
+      for (
+        let attempt = 0;
+        attempt < 20;
+        attempt++
+      ) {
+        const response =
+          await fetch(
+            "/api/topups/status",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                "x-telegram-init-data":
+                  initData,
+              },
+
+              body:
+                JSON.stringify({
+                  topupId,
+                }),
+            }
+          );
+
+        const data =
+          await response.json();
+
+        const status =
+          data?.topup?.status;
+
+        if (
+          status ===
+          "completed"
+        ) {
+          setSuccess(true);
+          setStatusMessage(
+            "Интернет успешно добавлен"
+          );
+          return;
+        }
+
+        if (
+          status ===
+          "failed"
+        ) {
           throw new Error(
-            "Не выбрана eSIM для пополнения"
+            data?.topup
+              ?.last_error ||
+              "Не удалось выполнить Top Up"
           );
         }
 
-        const initData =
-          telegram?.initData ?? "";
+        if (
+          status ===
+          "processing"
+        ) {
+          setStatusMessage(
+            "Пополняем eSIM…"
+          );
+        } else if (
+          status === "paid"
+        ) {
+          setStatusMessage(
+            "Оплата получена. Запускаем Top Up…"
+          );
+        } else {
+          setStatusMessage(
+            "Ждём подтверждение оплаты…"
+          );
+        }
 
-        if (!initData) {
+        await sleep(
+          1500
+        );
+      }
+
+      setStatusMessage(
+        "Оплата получена. Пополнение ещё обрабатывается."
+      );
+    };
+
+  const buy =
+    async (
+      plan: TopupPackage
+    ) => {
+      if (buyingSlug) {
+        return;
+      }
+
+      setError("");
+      setSuccess(false);
+      setBuyingSlug(
+        plan.slug
+      );
+      setStatusMessage(
+        "Создаём Top Up…"
+      );
+
+      try {
+        const tg =
+          telegram();
+
+        const initData =
+          tg?.initData ?? "";
+
+        if (
+          !tg ||
+          !initData
+        ) {
           throw new Error(
             "Открой WYLD ROAM внутри Telegram"
           );
         }
 
-        const response = await fetch(
-          "/api/esim/topups",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              initData,
-              esimId,
-            }),
-          }
-        );
+        /*
+         * Шаг 1.
+         * Сервер повторно проверяет
+         * настоящий пакет и цену
+         * у eSIMAccess.
+         */
+        const createResponse =
+          await fetch(
+            "/api/topups/create",
+            {
+              method:
+                "POST",
 
-        const data =
-          await response.json();
+              headers: {
+                "Content-Type":
+                  "application/json",
 
-        if (!response.ok || !data.ok) {
+                "x-telegram-init-data":
+                  initData,
+              },
+
+              body:
+                JSON.stringify({
+                  esimId,
+                  slug:
+                    plan.slug,
+                }),
+            }
+          );
+
+        const created =
+          await createResponse.json();
+
+        if (
+          !createResponse.ok ||
+          !created.success ||
+          !created?.topup?.id
+        ) {
           throw new Error(
-            data?.error ||
-              "Не удалось загрузить пополнения"
+            created?.error ||
+              "Не удалось создать Top Up"
           );
         }
 
-        setPackages(
-          Array.isArray(data.packages)
-            ? data.packages
-            : []
+        const topupId =
+          created.topup.id;
+
+        setStatusMessage(
+          "Создаём счёт Telegram Stars…"
         );
 
-        setCountryCode(
-          data?.esim?.countryCode ?? null
+        /*
+         * Шаг 2.
+         * Создаём Stars invoice.
+         */
+        const invoiceResponse =
+          await fetch(
+            "/api/payments/stars/topup",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                "x-telegram-init-data":
+                  initData,
+              },
+
+              body:
+                JSON.stringify({
+                  topupId,
+                }),
+            }
+          );
+
+        const invoice =
+          await invoiceResponse.json();
+
+        if (
+          !invoiceResponse.ok ||
+          !invoice.success ||
+          !invoice.invoiceUrl
+        ) {
+          throw new Error(
+            invoice?.error ||
+              "Не удалось создать оплату"
+          );
+        }
+
+        setStatusMessage(
+          `К оплате ${invoice.starsAmount} ⭐`
         );
-      } catch (loadError) {
+
+        if (!tg.openInvoice) {
+          throw new Error(
+            "Telegram Stars недоступны"
+          );
+        }
+
+        /*
+         * Шаг 3.
+         * Telegram сам показывает
+         * системное окно оплаты.
+         */
+        tg.openInvoice(
+          invoice.invoiceUrl,
+          async (
+            invoiceStatus
+          ) => {
+            if (
+              invoiceStatus ===
+              "cancelled"
+            ) {
+              setStatusMessage(
+                "Оплата отменена"
+              );
+              setBuyingSlug(
+                null
+              );
+              return;
+            }
+
+            if (
+              invoiceStatus ===
+              "failed"
+            ) {
+              setError(
+                "Telegram не смог провести оплату"
+              );
+              setBuyingSlug(
+                null
+              );
+              return;
+            }
+
+            try {
+              await pollStatus(
+                topupId
+              );
+            } catch (error) {
+              setError(
+                error instanceof Error
+                  ? error.message
+                  : "Ошибка Top Up"
+              );
+            } finally {
+              setBuyingSlug(
+                null
+              );
+            }
+          }
+        );
+      } catch (error) {
         setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Не удалось загрузить пополнения"
+          error instanceof Error
+            ? error.message
+            : "Ошибка Top Up"
         );
-      } finally {
-        setLoading(false);
+
+        setBuyingSlug(
+          null
+        );
       }
     };
 
-    load();
-  }, [esimId]);
+  if (success) {
+    return (
+      <main className="roam-page">
+        <RoamBackground />
+
+        <div className="roam-container">
+          <div
+            style={{
+              display:
+                "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "space-between",
+              marginBottom:
+                30,
+            }}
+          >
+            <BackButton href="/my-esims" />
+            <Brand />
+            <div
+              style={{
+                width: 42,
+              }}
+            />
+          </div>
+
+          <section
+            className="roam-card"
+            style={{
+              textAlign:
+                "center",
+
+              paddingTop:
+                42,
+
+              paddingBottom:
+                42,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 58,
+                marginBottom:
+                  18,
+              }}
+            >
+              ✓
+            </div>
+
+            <div
+              className="roam-chip"
+              style={{
+                width:
+                  "fit-content",
+                margin:
+                  "0 auto 16px",
+              }}
+            >
+              ГОТОВО
+            </div>
+
+            <h1
+              className="roam-title"
+              style={{
+                marginBottom:
+                  12,
+              }}
+            >
+              Интернет добавлен
+            </h1>
+
+            <p className="roam-subtitle">
+              Пакет подключён к
+              существующей eSIM.
+              Переустанавливать её
+              не нужно.
+            </p>
+
+            <Link
+              href="/my-esims"
+              className="roam-primary-button"
+              style={{
+                display:
+                  "flex",
+                marginTop:
+                  26,
+                textDecoration:
+                  "none",
+              }}
+            >
+              Мои eSIM
+              <span>→</span>
+            </Link>
+          </section>
+
+          <BottomNav />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="roam-page">
@@ -163,39 +646,52 @@ export default function TopupPage() {
       <div className="roam-container">
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "space-between",
             gap: 12,
-            marginBottom: 30,
+            marginBottom:
+              30,
           }}
         >
           <BackButton href="/my-esims" />
           <Brand />
-          <div style={{ width: 42 }} />
+          <div
+            style={{
+              width: 42,
+            }}
+          />
         </div>
 
         <section
           className="roam-card"
           style={{
-            marginBottom: 18,
-            overflow: "hidden",
+            marginBottom:
+              18,
           }}
         >
           <div
             style={{
               fontSize: 50,
-              marginBottom: 12,
+              marginBottom:
+                12,
             }}
           >
-            {flag(countryCode)}
+            {flag(
+              countryCode
+            )}
           </div>
 
           <div
             className="roam-chip"
             style={{
-              width: "fit-content",
-              marginBottom: 14,
+              width:
+                "fit-content",
+              marginBottom:
+                14,
             }}
           >
             TOP UP
@@ -204,88 +700,84 @@ export default function TopupPage() {
           <h1
             className="roam-title"
             style={{
-              marginBottom: 10,
+              marginBottom:
+                10,
             }}
           >
             Добавить интернет
           </h1>
 
           <p className="roam-subtitle">
-            Продолжай пользоваться той же
-            eSIM. Новый QR-код устанавливать
+            Продолжай пользоваться
+            той же eSIM. Новый
+            QR-код устанавливать
             не нужно.
           </p>
         </section>
 
         {loading && (
           <section className="roam-card">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-              }}
-            >
-              <div className="roam-pulse" />
-              <span>
-                Ищем доступные пакеты…
-              </span>
-            </div>
+            Загружаем пакеты…
           </section>
         )}
 
         {error && (
-          <section
-            className="roam-card roam-error"
-          >
+          <section className="roam-card roam-error">
             {error}
           </section>
         )}
 
-        {!loading &&
-          !error &&
-          packages.length === 0 && (
-            <section className="roam-card">
-              <h2
-                style={{
-                  marginTop: 0,
-                  marginBottom: 8,
-                }}
-              >
-                Пополнение недоступно
-              </h2>
-
-              <p
-                className="roam-subtitle"
-                style={{ margin: 0 }}
-              >
-                Для этой eSIM поставщик
-                сейчас не предлагает
-                совместимые Top Up-пакеты.
-              </p>
+        {statusMessage &&
+          !error && (
+            <section
+              className="roam-card-soft"
+              style={{
+                marginBottom:
+                  14,
+              }}
+            >
+              {statusMessage}
             </section>
           )}
 
         {!loading &&
           !error &&
-          packages.length > 0 && (
+          packages.length ===
+            0 && (
+            <section className="roam-card">
+              Для этой eSIM
+              сейчас нет доступных
+              Top Up-пакетов.
+            </section>
+          )}
+
+        {!loading &&
+          packages.length >
+            0 && (
             <>
               <div
                 style={{
-                  display: "flex",
+                  display:
+                    "flex",
+
                   justifyContent:
                     "space-between",
-                  alignItems: "end",
-                  gap: 12,
-                  margin: "26px 2px 14px",
+
+                  alignItems:
+                    "end",
+
+                  margin:
+                    "26px 2px 14px",
                 }}
               >
                 <div>
                   <div
                     className="roam-chip"
                     style={{
-                      width: "fit-content",
-                      marginBottom: 8,
+                      width:
+                        "fit-content",
+                      marginBottom:
+                        8,
                     }}
                   >
                     ДОСТУПНО
@@ -294,7 +786,8 @@ export default function TopupPage() {
                   <h2
                     style={{
                       margin: 0,
-                      fontSize: 25,
+                      fontSize:
+                        25,
                     }}
                   >
                     Выбери пакет
@@ -303,159 +796,217 @@ export default function TopupPage() {
 
                 <span
                   style={{
-                    opacity: 0.55,
-                    fontSize: 13,
+                    opacity:
+                      0.55,
+
+                    fontSize:
+                      13,
                   }}
                 >
-                  {packages.length} вариантов
+                  {
+                    packages.length
+                  }{" "}
+                  вариантов
                 </span>
               </div>
 
               <div
                 style={{
-                  display: "grid",
+                  display:
+                    "grid",
                   gap: 12,
                 }}
               >
-                {packages.map((plan) => (
-                  <article
-                    key={plan.slug}
-                    className="roam-card"
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent:
-                          "space-between",
-                        alignItems:
-                          "flex-start",
-                        gap: 18,
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: 27,
-                            fontWeight: 800,
-                            letterSpacing:
-                              "-0.03em",
-                          }}
-                        >
-                          {plan.dataLabel}
-                        </div>
+                {packages.map(
+                  (plan) => {
+                    const busy =
+                      buyingSlug ===
+                      plan.slug;
 
-                        <div
-                          style={{
-                            marginTop: 6,
-                            opacity: 0.65,
-                            fontSize: 14,
-                          }}
-                        >
-                          {plan.durationLabel}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          textAlign: "right",
-                        }}
+                    return (
+                      <article
+                        key={
+                          plan.slug
+                        }
+                        className="roam-card"
                       >
                         <div
                           style={{
-                            fontSize: 25,
-                            fontWeight: 800,
+                            display:
+                              "flex",
+
+                            justifyContent:
+                              "space-between",
+
+                            alignItems:
+                              "flex-start",
+
+                            gap: 18,
                           }}
                         >
-                          $
-                          {plan.amount.toFixed(
-                            2
-                          )}
-                        </div>
+                          <div>
+                            <div
+                              style={{
+                                fontSize:
+                                  27,
 
-                        <div
-                          style={{
-                            marginTop: 5,
-                            opacity: 0.48,
-                            fontSize: 12,
-                          }}
-                        >
-                          USD
-                        </div>
-                      </div>
-                    </div>
-
-                    {plan.networks.length >
-                      0 && (
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: 7,
-                          marginTop: 17,
-                        }}
-                      >
-                        {plan.networks.map(
-                          (network) => (
-                            <span
-                              key={network}
-                              className="roam-chip"
+                                fontWeight:
+                                  800,
+                              }}
                             >
-                              {network}
-                            </span>
-                          )
+                              {
+                                plan.dataLabel
+                              }
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop:
+                                  6,
+
+                                opacity:
+                                  0.65,
+
+                                fontSize:
+                                  14,
+                              }}
+                            >
+                              {
+                                plan.durationLabel
+                              }
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              textAlign:
+                                "right",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize:
+                                  25,
+
+                                fontWeight:
+                                  800,
+                              }}
+                            >
+                              $
+                              {plan.amount.toFixed(
+                                2
+                              )}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop:
+                                  5,
+
+                                opacity:
+                                  0.48,
+
+                                fontSize:
+                                  12,
+                              }}
+                            >
+                              USD
+                            </div>
+                          </div>
+                        </div>
+
+                        {plan.networks
+                          .length >
+                          0 && (
+                          <div
+                            style={{
+                              display:
+                                "flex",
+
+                              flexWrap:
+                                "wrap",
+
+                              gap: 7,
+
+                              marginTop:
+                                17,
+                            }}
+                          >
+                            {plan.networks.map(
+                              (
+                                network
+                              ) => (
+                                <span
+                                  key={
+                                    network
+                                  }
+                                  className="roam-chip"
+                                >
+                                  {
+                                    network
+                                  }
+                                </span>
+                              )
+                            )}
+                          </div>
                         )}
-                      </div>
-                    )}
 
-                    <button
-                      type="button"
-                      className="roam-primary-button"
-                      style={{
-                        width: "100%",
-                        marginTop: 18,
-                        opacity: 0.72,
-                        cursor: "default",
-                      }}
-                      onClick={() => {
-                        alert(
-                          `Пакет ${plan.dataLabel} выбран.\n\nНа следующем этапе подключим оплату Telegram Stars и автоматический Top Up. Сейчас деньги НЕ списываются.`
-                        );
-                      }}
-                    >
-                      Выбрать · $
-                      {plan.amount.toFixed(2)}
-                    </button>
-                  </article>
-                ))}
+                        <button
+                          type="button"
+                          disabled={
+                            Boolean(
+                              buyingSlug
+                            )
+                          }
+                          onClick={() =>
+                            buy(
+                              plan
+                            )
+                          }
+                          className="roam-primary-button"
+                          style={{
+                            width:
+                              "100%",
+
+                            marginTop:
+                              18,
+
+                            opacity:
+                              buyingSlug &&
+                              !busy
+                                ? 0.45
+                                : 1,
+                          }}
+                        >
+                          {busy
+                            ? "Подготавливаем…"
+                            : `Пополнить · $${plan.amount.toFixed(
+                                2
+                              )}`}
+                        </button>
+                      </article>
+                    );
+                  }
+                )}
               </div>
-
-              <section
-                className="roam-card-soft"
-                style={{
-                  marginTop: 16,
-                  fontSize: 13,
-                  lineHeight: 1.6,
-                  opacity: 0.72,
-                }}
-              >
-                На этом этапе экран работает
-                в безопасном режиме:
-                WYLD ROAM получает настоящие
-                доступные пакеты eSIMAccess,
-                но Top Up ещё не покупает.
-              </section>
             </>
           )}
-
-        <div style={{ height: 20 }} />
 
         <Link
           href="/my-esims"
           className="roam-secondary-button"
           style={{
-            width: "100%",
-            textAlign: "center",
-            display: "block",
+            display:
+              "block",
+
+            width:
+              "100%",
+
+            textAlign:
+              "center",
+
+            marginTop:
+              18,
           }}
         >
           Вернуться к моим eSIM

@@ -6,6 +6,10 @@ import {
   issueEsimForOrder,
 } from "@/lib/esim-issuance";
 
+import {
+  topupEsimForOrder,
+} from "@/lib/topup-issuance";
+
 type TelegramPreCheckoutQuery = {
   id: string;
 
@@ -47,6 +51,25 @@ type TelegramUpdate = {
       TelegramSuccessfulPayment;
   };
 };
+
+function extractTopupId(
+  payload: string
+) {
+  const prefix =
+    "wyld_roam_topup:";
+
+  if (
+    !payload.startsWith(
+      prefix
+    )
+  ) {
+    return null;
+  }
+
+  return payload.slice(
+    prefix.length
+  );
+}
 
 function extractOrderId(
   payload: string
@@ -106,6 +129,176 @@ export async function POST(
     ) {
       const query =
         update.pre_checkout_query;
+
+      const topupId =
+        extractTopupId(
+          query.invoice_payload
+        );
+
+      /*
+       * ======================================================
+       * TOP UP PRE-CHECKOUT
+       * ======================================================
+       */
+      if (topupId) {
+        let topupOk =
+          false;
+
+        let topupError:
+          string | undefined;
+
+        const supabase =
+          getSupabaseAdmin();
+
+        if (
+          query.currency !==
+          "XTR"
+        ) {
+          topupError =
+            "Некорректная валюта.";
+        } else {
+          const {
+            data: topup,
+            error: topupLookupError,
+          } = await supabase
+            .from("roam_topups")
+            .select(
+              "id,user_id,status"
+            )
+            .eq("id", topupId)
+            .maybeSingle();
+
+          if (
+            topupLookupError ||
+            !topup
+          ) {
+            topupError =
+              "Пополнение не найдено.";
+          } else if (
+            topup.status !==
+            "pending_payment"
+          ) {
+            topupError =
+              "Это пополнение уже недоступно для оплаты.";
+          } else {
+            const {
+              data: user,
+            } = await supabase
+              .from("roam_users")
+              .select(
+                "telegram_user_id"
+              )
+              .eq(
+                "id",
+                topup.user_id
+              )
+              .maybeSingle();
+
+            if (
+              !user ||
+              Number(
+                user.telegram_user_id
+              ) !== query.from.id
+            ) {
+              topupError =
+                "Это пополнение принадлежит другому пользователю.";
+            } else {
+              const {
+                data: payment,
+              } = await supabase
+                .from("roam_payments")
+                .select(
+                  "stars_amount"
+                )
+                .eq(
+                  "topup_id",
+                  topupId
+                )
+                .eq(
+                  "provider",
+                  "telegram_stars"
+                )
+                .eq(
+                  "status",
+                  "pending"
+                )
+                .order(
+                  "created_at",
+                  {
+                    ascending:
+                      false,
+                  }
+                )
+                .limit(1)
+                .maybeSingle();
+
+              if (!payment) {
+                topupError =
+                  "Платёж не найден.";
+              } else if (
+                Number(
+                  payment.stars_amount
+                ) !==
+                query.total_amount
+              ) {
+                topupError =
+                  "Сумма платежа изменилась.";
+              } else {
+                topupOk =
+                  true;
+              }
+            }
+          }
+        }
+
+        const telegramResponse =
+          await fetch(
+            `https://api.telegram.org/bot${botToken}/answerPreCheckoutQuery`,
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  pre_checkout_query_id:
+                    query.id,
+
+                  ok:
+                    topupOk,
+
+                  ...(topupOk
+                    ? {}
+                    : {
+                        error_message:
+                          topupError ??
+                          "Пополнение сейчас недоступно.",
+                      }),
+                }),
+            }
+          );
+
+        const telegramResult =
+          await telegramResponse.json();
+
+        if (
+          !telegramResponse.ok ||
+          !telegramResult.ok
+        ) {
+          console.error(
+            "Top Up answerPreCheckoutQuery error:",
+            telegramResult
+          );
+        }
+
+        return Response.json({
+          ok: true,
+        });
+      }
 
       const orderId =
         extractOrderId(
@@ -334,6 +527,289 @@ export async function POST(
         ?.successful_payment;
 
     if (successfulPayment) {
+      const topupId =
+        extractTopupId(
+          successfulPayment.invoice_payload
+        );
+
+      /*
+       * ======================================================
+       * SUCCESSFUL TOP UP PAYMENT
+       * ======================================================
+       */
+      if (topupId) {
+        if (
+          successfulPayment.currency !==
+          "XTR"
+        ) {
+          console.error(
+            "Invalid Top Up currency"
+          );
+
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        const supabase =
+          getSupabaseAdmin();
+
+        const {
+          data:
+            existingPayment,
+        } = await supabase
+          .from("roam_payments")
+          .select("id")
+          .eq(
+            "provider_payment_id",
+            successfulPayment
+              .telegram_payment_charge_id
+          )
+          .maybeSingle();
+
+        if (
+          existingPayment
+        ) {
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        const {
+          data: topup,
+          error:
+            topupError,
+        } = await supabase
+          .from("roam_topups")
+          .select(
+            "id,user_id,status"
+          )
+          .eq(
+            "id",
+            topupId
+          )
+          .maybeSingle();
+
+        if (
+          topupError ||
+          !topup
+        ) {
+          console.error(
+            "Successful Top Up not found:",
+            topupError
+          );
+
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        const messageUserId =
+          update.message
+            ?.from?.id;
+
+        const {
+          data: owner,
+        } = await supabase
+          .from("roam_users")
+          .select(
+            "telegram_user_id"
+          )
+          .eq(
+            "id",
+            topup.user_id
+          )
+          .maybeSingle();
+
+        if (
+          !owner ||
+          !messageUserId ||
+          Number(
+            owner.telegram_user_id
+          ) !==
+            messageUserId
+        ) {
+          console.error(
+            "Top Up payment owner mismatch"
+          );
+
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        const {
+          data:
+            pendingPayment,
+          error:
+            pendingPaymentError,
+        } = await supabase
+          .from("roam_payments")
+          .select(
+            "id,stars_amount,status"
+          )
+          .eq(
+            "topup_id",
+            topupId
+          )
+          .eq(
+            "provider",
+            "telegram_stars"
+          )
+          .eq(
+            "status",
+            "pending"
+          )
+          .order(
+            "created_at",
+            {
+              ascending:
+                false,
+            }
+          )
+          .limit(1)
+          .maybeSingle();
+
+        if (
+          pendingPaymentError ||
+          !pendingPayment
+        ) {
+          console.error(
+            "Pending Top Up payment not found:",
+            pendingPaymentError
+          );
+
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        if (
+          Number(
+            pendingPayment.stars_amount
+          ) !==
+          successfulPayment
+            .total_amount
+        ) {
+          console.error(
+            "Top Up Stars amount mismatch"
+          );
+
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        const now =
+          new Date()
+            .toISOString();
+
+        const {
+          data:
+            paidPayment,
+          error:
+            paymentUpdateError,
+        } = await supabase
+          .from("roam_payments")
+          .update({
+            status:
+              "paid",
+
+            provider_payment_id:
+              successfulPayment
+                .telegram_payment_charge_id,
+
+            paid_at:
+              now,
+
+            raw_payload:
+              successfulPayment,
+          })
+          .eq(
+            "id",
+            pendingPayment.id
+          )
+          .eq(
+            "status",
+            "pending"
+          )
+          .select("id")
+          .maybeSingle();
+
+        if (
+          paymentUpdateError ||
+          !paidPayment
+        ) {
+          console.error(
+            "Top Up payment update error:",
+            paymentUpdateError
+          );
+
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        const {
+          error:
+            topupPaidError,
+        } = await supabase
+          .from("roam_topups")
+          .update({
+            status:
+              "paid",
+
+            stars_amount:
+              successfulPayment
+                .total_amount,
+
+            updated_at:
+              now,
+          })
+          .eq(
+            "id",
+            topupId
+          )
+          .eq(
+            "status",
+            "pending_payment"
+          );
+
+        if (
+          topupPaidError
+        ) {
+          console.error(
+            "Top Up paid status error:",
+            topupPaidError
+          );
+
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        try {
+          const result =
+            await topupEsimForOrder(
+              topupId
+            );
+
+          console.log(
+            "Automatic eSIM Top Up:",
+            result
+          );
+        } catch (error) {
+          console.error(
+            "Automatic eSIM Top Up error:",
+            error
+          );
+        }
+
+        return Response.json({
+          ok: true,
+        });
+      }
+
       const orderId =
         extractOrderId(
           successfulPayment.invoice_payload

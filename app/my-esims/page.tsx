@@ -172,7 +172,9 @@ export default function MyEsimsPage() {
         currentEsims.some(
           (esim) =>
             esim.order_id ===
-            LIVE_TEST_ORDER_ID
+              LIVE_TEST_ORDER_ID &&
+            esim.status ===
+              "ready"
         );
 
       if (

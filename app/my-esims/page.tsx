@@ -22,21 +22,9 @@ type Esim = {
   activation_code: string | null;
   smdp_address: string | null;
   status: string;
-  remaining_data_bytes:
-    | number
-    | null;
+  remaining_data_bytes: number | null;
   expires_at: string | null;
 };
-
-/*
- * Уже оплаченный настоящий заказ.
- * Russia — 100MB / 7 Days.
- *
- * После успешного живого теста
- * этот временный механизм удалим.
- */
-const LIVE_TEST_ORDER_ID =
-  "e89032c3-9c9d-4006-9597-25ab41f4e3e1";
 
 function statusLabel(
   status: string
@@ -44,36 +32,137 @@ function statusLabel(
   switch (status) {
     case "pending":
       return "Подготавливается";
-
     case "ready":
       return "Готова";
-
     case "active":
       return "Активна";
-
     case "suspended":
       return "Приостановлена";
-
     case "expired":
       return "Истекла";
-
     case "revoked":
       return "Отозвана";
-
     case "failed":
       return "Ошибка";
-
     default:
       return status;
   }
 }
 
-export default function MyEsimsPage() {
-  const [esims, setEsims] =
-    useState<Esim[]>([]);
+function formatBytes(
+  value: number | null
+) {
+  if (
+    value === null ||
+    !Number.isFinite(value)
+  ) {
+    return null;
+  }
 
-  const [loading, setLoading] =
-    useState(true);
+  const gb =
+    value /
+    1024 /
+    1024 /
+    1024;
+
+  if (gb >= 1) {
+    return `${gb.toFixed(
+      gb >= 10 ? 0 : 2
+    )} GB`;
+  }
+
+  const mb =
+    value /
+    1024 /
+    1024;
+
+  return `${Math.max(
+    Math.round(mb),
+    0
+  )} MB`;
+}
+
+function formatDate(
+  value: string | null
+) {
+  if (!value) {
+    return null;
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(
+    "ru-RU",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }
+  ).format(date);
+}
+
+function getLpaString(
+  esim: Esim
+) {
+  if (
+    !esim.smdp_address ||
+    !esim.activation_code
+  ) {
+    return null;
+  }
+
+  return `LPA:1$${esim.smdp_address}$${esim.activation_code}`;
+}
+
+function getInstallUrl(
+  esim: Esim
+) {
+  const lpa =
+    getLpaString(esim);
+
+  if (!lpa) {
+    return null;
+  }
+
+  return (
+    "https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=" +
+    encodeURIComponent(lpa)
+  );
+}
+
+async function copyText(
+  value: string
+) {
+  try {
+    await navigator.clipboard.writeText(
+      value
+    );
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export default function MyEsimsPage() {
+  const [
+    esims,
+    setEsims,
+  ] = useState<Esim[]>([]);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
   const [
     telegramMode,
@@ -81,14 +170,16 @@ export default function MyEsimsPage() {
   ] = useState(false);
 
   const [
-    issuing,
-    setIssuing,
+    syncing,
+    setSyncing,
   ] = useState(false);
 
   const [
-    issueMessage,
-    setIssueMessage,
-  ] = useState("");
+    copied,
+    setCopied,
+  ] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     const webApp =
@@ -102,7 +193,6 @@ export default function MyEsimsPage() {
       initData
     ) {
       setTelegramMode(true);
-
       webApp.ready();
       webApp.expand();
     }
@@ -110,7 +200,7 @@ export default function MyEsimsPage() {
     async function loadEsims() {
       if (!initData) {
         setLoading(false);
-        return;
+        return [];
       }
 
       try {
@@ -131,178 +221,141 @@ export default function MyEsimsPage() {
         const data =
           await response.json();
 
-        if (
+        const list =
           data.success
-        ) {
-          setEsims(
-            data.esims ?? []
-          );
+            ? data.esims ?? []
+            : [];
 
-          return (
-            data.esims ?? []
-          ) as Esim[];
-        }
-      } catch (
-        error
-      ) {
+        setEsims(list);
+
+        return list as Esim[];
+      } catch (error) {
         console.error(
           "Load eSIMs error:",
           error
         );
+
+        return [];
       } finally {
         setLoading(false);
       }
-
-      return [];
     }
 
-    async function run() {
-      const currentEsims =
-        (await loadEsims()) ?? [];
-
+    async function syncPending(
+      list: Esim[]
+    ) {
       if (!initData) {
         return;
       }
 
-      /*
-       * Если эта eSIM уже появилась,
-       * повторный запуск не нужен.
-       */
-      const alreadyExists =
-        currentEsims.some(
+      const pending =
+        list.filter(
           (esim) =>
-            esim.order_id ===
-              LIVE_TEST_ORDER_ID &&
             esim.status ===
-              "ready"
+            "pending"
         );
 
       if (
-        alreadyExists
+        pending.length === 0
       ) {
         return;
       }
 
-      /*
-       * Дополнительная защита браузера
-       * от нескольких одновременных
-       * вызовов при повторном render.
-       *
-       * Сервер всё равно остаётся
-       * главным idempotency-контролем.
-       */
-      const storageKey =
-        `wyld-live-issue-${LIVE_TEST_ORDER_ID}`;
-
-      if (
-        sessionStorage.getItem(
-          storageKey
-        ) === "running"
-      ) {
-        return;
-      }
-
-      sessionStorage.setItem(
-        storageKey,
-        "running"
-      );
-
-      setIssuing(true);
-      setIssueMessage(
-        "Выпускаем вашу eSIM..."
-      );
+      setSyncing(true);
 
       try {
-        const response =
-          await fetch(
-            "/api/esim/issue",
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-
-                "x-telegram-init-data":
-                  initData,
-              },
-
-              body:
-                JSON.stringify({
-                  orderId:
-                    LIVE_TEST_ORDER_ID,
-                }),
-            }
-          );
-
-        const data =
-          await response.json();
-
-        console.log(
-          "Live eSIM issue:",
-          data
-        );
-
-        if (
-          data.success &&
-          data.ready
+        for (
+          const esim of pending
         ) {
-          setIssueMessage(
-            "eSIM готова"
-          );
-        } else if (
-          data.success &&
-          data.alreadyReady
-        ) {
-          setIssueMessage(
-            "eSIM уже готова"
-          );
-        } else if (
-          data.success &&
-          data.pending
-        ) {
-          setIssueMessage(
-            "eSIM куплена. Поставщик подготавливает профиль..."
-          );
-        } else {
-          sessionStorage.removeItem(
-            storageKey
-          );
+          try {
+            await fetch(
+              "/api/esim/issue",
+              {
+                method:
+                  "POST",
 
-          setIssueMessage(
-            data.error ??
-              "Не удалось выпустить eSIM"
-          );
+                headers: {
+                  "Content-Type":
+                    "application/json",
+
+                  "x-telegram-init-data":
+                    initData,
+                },
+
+                body:
+                  JSON.stringify({
+                    orderId:
+                      esim.order_id,
+                  }),
+              }
+            );
+          } catch (error) {
+            console.error(
+              "eSIM sync error:",
+              error
+            );
+          }
         }
 
-        /*
-         * Перечитываем список.
-         * Даже pending-запись уже должна
-         * появиться в «Мои eSIM».
-         */
         await loadEsims();
-      } catch (
-        error
-      ) {
-        console.error(
-          "Issue eSIM error:",
-          error
-        );
-
-        sessionStorage.removeItem(
-          storageKey
-        );
-
-        setIssueMessage(
-          "Ошибка соединения при выпуске eSIM"
-        );
       } finally {
-        setIssuing(false);
+        setSyncing(false);
       }
+    }
+
+    async function run() {
+      const list =
+        await loadEsims();
+
+      await syncPending(
+        list
+      );
     }
 
     run();
   }, []);
+
+  async function handleCopy(
+    key: string,
+    value: string
+  ) {
+    const success =
+      await copyText(
+        value
+      );
+
+    if (!success) {
+      return;
+    }
+
+    setCopied(key);
+
+    window.setTimeout(
+      () => {
+        setCopied(
+          (current) =>
+            current === key
+              ? null
+              : current
+        );
+      },
+      1500
+    );
+  }
+
+  function openInstall(
+    esim: Esim
+  ) {
+    const url =
+      getInstallUrl(esim);
+
+    if (!url) {
+      return;
+    }
+
+    window.location.href =
+      url;
+  }
 
   return (
     <main className="min-h-screen bg-[#050505] text-white">
@@ -317,29 +370,23 @@ export default function MyEsimsPage() {
           </h1>
 
           <p className="mt-3 text-sm text-white/45">
-            Ваши подключённые eSIM
-            и их статус
+            Ваши eSIM, установка
+            и управление
           </p>
         </header>
 
-        {issuing && (
+        {syncing && (
           <div className="mb-5 rounded-3xl border border-white/10 bg-white/[0.07] p-5">
             <div className="text-sm font-semibold">
-              Подготовка eSIM
+              Подготавливаем eSIM
             </div>
 
             <div className="mt-2 text-sm text-white/45">
-              {issueMessage}
+              Получаем профиль
+              от оператора...
             </div>
           </div>
         )}
-
-        {!issuing &&
-          issueMessage && (
-            <div className="mb-5 rounded-3xl border border-white/10 bg-white/[0.07] p-5 text-sm">
-              {issueMessage}
-            </div>
-          )}
 
         {loading ? (
           <div className="py-16 text-center text-sm text-white/40">
@@ -353,23 +400,20 @@ export default function MyEsimsPage() {
             </div>
 
             <p className="mt-3 text-sm leading-6 text-white/45">
-              Раздел «Мои eSIM»
-              привязан к вашему
-              Telegram-аккаунту.
+              Этот раздел привязан
+              к вашему Telegram-аккаунту.
             </p>
           </div>
         ) : esims.length === 0 ? (
           <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6">
             <div className="text-xl font-semibold">
-              {issuing
-                ? "Выпускаем eSIM"
-                : "Пока пусто"}
+              Пока пусто
             </div>
 
             <p className="mt-3 text-sm leading-6 text-white/45">
-              {issuing
-                ? "Подождите немного. Профиль создаётся у оператора."
-                : "После первой покупки ваша eSIM появится здесь автоматически."}
+              После покупки ваша
+              eSIM появится здесь
+              автоматически.
             </p>
 
             <Link
@@ -380,80 +424,254 @@ export default function MyEsimsPage() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-5">
             {esims.map(
-              (esim) => (
-                <article
-                  key={
-                    esim.id
-                  }
-                  className="rounded-3xl border border-white/10 bg-white/[0.05] p-5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-2xl font-semibold">
-                        {
-                          esim.country_code
-                        }
+              (esim) => {
+                const remaining =
+                  formatBytes(
+                    esim.remaining_data_bytes
+                  );
+
+                const expires =
+                  formatDate(
+                    esim.expires_at
+                  );
+
+                const lpa =
+                  getLpaString(
+                    esim
+                  );
+
+                const installUrl =
+                  getInstallUrl(
+                    esim
+                  );
+
+                const qrIsUrl =
+                  Boolean(
+                    esim.qr_code &&
+                      /^https?:\/\//i.test(
+                        esim.qr_code
+                      )
+                  );
+
+                return (
+                  <article
+                    key={
+                      esim.id
+                    }
+                    className="overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.05]"
+                  >
+                    <div className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-3xl font-semibold">
+                            {
+                              esim.country_code
+                            }
+                          </div>
+
+                          <div className="mt-1 text-sm text-white/40">
+                            {
+                              esim.package_code
+                            }
+                          </div>
+                        </div>
+
+                        <div className="rounded-full bg-white/10 px-3 py-2 text-xs">
+                          {statusLabel(
+                            esim.status
+                          )}
+                        </div>
                       </div>
 
-                      <div className="mt-1 text-sm text-white/40">
-                        {
-                          esim.package_code
-                        }
-                      </div>
-                    </div>
+                      {(remaining ||
+                        expires) && (
+                        <div className="mt-5 grid grid-cols-2 gap-3">
+                          {remaining && (
+                            <div className="rounded-2xl bg-white/[0.06] p-4">
+                              <div className="text-xs text-white/35">
+                                Осталось
+                              </div>
 
-                    <div className="rounded-full bg-white/10 px-3 py-2 text-xs">
-                      {statusLabel(
-                        esim.status
+                              <div className="mt-1 font-semibold">
+                                {
+                                  remaining
+                                }
+                              </div>
+                            </div>
+                          )}
+
+                          {expires && (
+                            <div className="rounded-2xl bg-white/[0.06] p-4">
+                              <div className="text-xs text-white/35">
+                                Действует до
+                              </div>
+
+                              <div className="mt-1 font-semibold">
+                                {
+                                  expires
+                                }
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {esim.status ===
+                        "pending" && (
+                        <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-white/50">
+                          Профиль уже
+                          заказан. Обычно
+                          подготовка занимает
+                          немного времени.
+                        </div>
+                      )}
+
+                      {esim.status ===
+                        "ready" && (
+                        <>
+                          {qrIsUrl && (
+                            <div className="mt-6 rounded-3xl bg-white p-5">
+                              <div className="mb-4 text-center text-sm font-semibold text-black">
+                                QR-код установки
+                              </div>
+
+                              <img
+                                src={
+                                  esim.qr_code!
+                                }
+                                alt="QR-код eSIM"
+                                className="mx-auto aspect-square w-full max-w-[260px] object-contain"
+                              />
+
+                              <div className="mt-4 text-center text-xs leading-5 text-black/50">
+                                Откройте этот
+                                QR-код на другом
+                                устройстве и
+                                отсканируйте его
+                                телефоном.
+                              </div>
+                            </div>
+                          )}
+
+                          {installUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openInstall(
+                                  esim
+                                )
+                              }
+                              className="mt-5 flex h-14 w-full items-center justify-center rounded-2xl bg-white text-base font-semibold text-black"
+                            >
+                              Установить eSIM
+                            </button>
+                          )}
+
+                          <div className="mt-6 border-t border-white/10 pt-5">
+                            <div className="mb-4 text-sm font-semibold">
+                              Ручная установка
+                            </div>
+
+                            {esim.smdp_address && (
+                              <div className="mb-4 rounded-2xl bg-white/[0.05] p-4">
+                                <div className="text-xs text-white/35">
+                                  SM-DP+
+                                </div>
+
+                                <div className="mt-2 break-all text-sm">
+                                  {
+                                    esim.smdp_address
+                                  }
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleCopy(
+                                      `${esim.id}-smdp`,
+                                      esim.smdp_address!
+                                    )
+                                  }
+                                  className="mt-3 text-sm font-semibold text-white/70"
+                                >
+                                  {copied ===
+                                  `${esim.id}-smdp`
+                                    ? "Скопировано ✓"
+                                    : "Скопировать"}
+                                </button>
+                              </div>
+                            )}
+
+                            {esim.activation_code && (
+                              <div className="mb-4 rounded-2xl bg-white/[0.05] p-4">
+                                <div className="text-xs text-white/35">
+                                  Код активации
+                                </div>
+
+                                <div className="mt-2 break-all text-sm">
+                                  {
+                                    esim.activation_code
+                                  }
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleCopy(
+                                      `${esim.id}-activation`,
+                                      esim.activation_code!
+                                    )
+                                  }
+                                  className="mt-3 text-sm font-semibold text-white/70"
+                                >
+                                  {copied ===
+                                  `${esim.id}-activation`
+                                    ? "Скопировано ✓"
+                                    : "Скопировать"}
+                                </button>
+                              </div>
+                            )}
+
+                            {lpa && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCopy(
+                                    `${esim.id}-lpa`,
+                                    lpa
+                                  )
+                                }
+                                className="flex h-12 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-sm font-semibold"
+                              >
+                                {copied ===
+                                `${esim.id}-lpa`
+                                  ? "Строка установки скопирована ✓"
+                                  : "Скопировать данные установки"}
+                              </button>
+                            )}
+                          </div>
+
+                          {esim.iccid && (
+                            <div className="mt-5 border-t border-white/10 pt-5">
+                              <div className="text-xs text-white/35">
+                                ICCID
+                              </div>
+
+                              <div className="mt-1 break-all text-xs text-white/55">
+                                {
+                                  esim.iccid
+                                }
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
-                  </div>
-
-                  {esim.iccid && (
-                    <div className="mt-5 border-t border-white/10 pt-5">
-                      <div className="text-xs text-white/35">
-                        ICCID
-                      </div>
-
-                      <div className="mt-1 break-all text-sm">
-                        {
-                          esim.iccid
-                        }
-                      </div>
-                    </div>
-                  )}
-
-                  {esim.smdp_address && (
-                    <div className="mt-4">
-                      <div className="text-xs text-white/35">
-                        SM-DP+
-                      </div>
-
-                      <div className="mt-1 break-all text-sm">
-                        {
-                          esim.smdp_address
-                        }
-                      </div>
-                    </div>
-                  )}
-
-                  {esim.activation_code && (
-                    <div className="mt-4">
-                      <div className="text-xs text-white/35">
-                        Код активации
-                      </div>
-
-                      <div className="mt-1 break-all text-sm">
-                        {
-                          esim.activation_code
-                        }
-                      </div>
-                    </div>
-                  )}
-                </article>
-              )
+                  </article>
+                );
+              }
             )}
           </div>
         )}
@@ -473,5 +691,4 @@ export default function MyEsimsPage() {
       </div>
     </main>
   );
-
 }

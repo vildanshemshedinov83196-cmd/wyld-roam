@@ -663,6 +663,19 @@ export default function MyEsimsPage() {
                             </button>
                           )}
 
+                          <a
+                            href={`/topup?esim=${esim.id}`}
+                            className="roam-primary mt-4"
+                            style={{
+                              display: "flex",
+                              width: "100%",
+                              textDecoration: "none",
+                            }}
+                          >
+                            Пополнить интернет
+                            <span>→</span>
+                          </a>
+
                           <details className="roam-card-soft mt-4 overflow-hidden">
                             <summary className="cursor-pointer list-none p-5 text-sm font-bold">
                               <div className="flex items-center justify-between">

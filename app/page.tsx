@@ -11,6 +11,12 @@ import {
 } from "next/navigation";
 
 import {
+  BottomNav,
+  Brand,
+  RoamBackground,
+} from "@/components/roam-ui";
+
+import {
   getTelegramInitData,
   getTelegramWebApp,
 } from "@/lib/telegram-client";
@@ -22,6 +28,56 @@ type Location = {
   continent: string | null;
   subLocations: Location[];
 };
+
+function getFlagEmoji(
+  code: string
+) {
+  if (code.length !== 2) {
+    return "🌍";
+  }
+
+  return code
+    .toUpperCase()
+    .replace(
+      /./g,
+      (char) =>
+        String.fromCodePoint(
+          127397 +
+            char.charCodeAt(0)
+        )
+    );
+}
+
+function russianName(
+  location: Location
+) {
+  try {
+    if (
+      location.code.length === 2
+    ) {
+      const names =
+        new Intl.DisplayNames(
+          ["ru"],
+          {
+            type: "region",
+          }
+        );
+
+      const translated =
+        names.of(
+          location.code
+        );
+
+      if (translated) {
+        return translated;
+      }
+    }
+  } catch {
+    // fallback below
+  }
+
+  return location.name;
+}
 
 export default function Home() {
   const router =
@@ -47,11 +103,6 @@ export default function Home() {
     setIsOwner,
   ] = useState(false);
 
-  /*
-   * 1. Регистрируем Telegram-пользователя
-   * и одновременно проверяем,
-   * является ли он owner.
-   */
   useEffect(() => {
     async function registerTelegramUser() {
       const webApp =
@@ -98,10 +149,6 @@ export default function Home() {
           );
         }
 
-        /*
-         * После регистрации
-         * узнаём роль пользователя.
-         */
         const meResponse =
           await fetch(
             "/api/me",
@@ -122,7 +169,8 @@ export default function Home() {
         if (
           meResponse.ok &&
           meResult.success &&
-          meResult.isOwner === true
+          meResult.isOwner ===
+            true
         ) {
           setIsOwner(true);
         }
@@ -137,9 +185,6 @@ export default function Home() {
     registerTelegramUser();
   }, []);
 
-  /*
-   * 2. Загружаем список стран.
-   */
   useEffect(() => {
     async function loadLocations() {
       try {
@@ -155,9 +200,7 @@ export default function Home() {
         const data =
           await response.json();
 
-        if (
-          data.success
-        ) {
+        if (data.success) {
           setLocations(
             data.locations ??
               []
@@ -177,17 +220,19 @@ export default function Home() {
   }, []);
 
   const countryLocations =
-    useMemo(() => {
-      return locations.filter(
-        (location) =>
-          Boolean(
-            location.code
-          ) &&
-          Boolean(
-            location.name
-          )
-      );
-    }, [locations]);
+    useMemo(
+      () =>
+        locations.filter(
+          (location) =>
+            Boolean(
+              location.code
+            ) &&
+            Boolean(
+              location.name
+            )
+        ),
+      [locations]
+    );
 
   const filteredLocations =
     useMemo(() => {
@@ -201,17 +246,24 @@ export default function Home() {
       }
 
       return countryLocations.filter(
-        (location) =>
-          location.name
-            .toLowerCase()
-            .includes(
+        (location) => {
+          const translated =
+            russianName(
+              location
+            ).toLowerCase();
+
+          return (
+            location.name
+              .toLowerCase()
+              .includes(query) ||
+            translated.includes(
               query
             ) ||
-          location.code
-            .toLowerCase()
-            .includes(
-              query
-            )
+            location.code
+              .toLowerCase()
+              .includes(query)
+          );
+        }
       );
     }, [
       countryLocations,
@@ -229,142 +281,252 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white">
-      <div className="mx-auto min-h-screen max-w-md px-5 pb-28 pt-8">
-        {/* BRAND */}
+    <main className="roam-page">
+      <RoamBackground />
 
-        <div className="text-xs font-semibold uppercase tracking-[0.4em] text-white/35">
-          WYLD ROAM
-        </div>
+      <div className="roam-container">
+        <Brand />
 
-        {/* HERO */}
+        <section className="relative mt-9">
+          <div className="roam-kicker">
+            Travel connectivity
+          </div>
 
-        <section className="mt-7">
-          <h1 className="max-w-sm text-5xl font-semibold leading-[1.05] tracking-[-0.04em]">
-            Интернет
+          <h1 className="roam-title mt-4">
+            Stay connected.
             <br />
-            без границ
+            Anywhere.
           </h1>
 
-          <p className="mt-6 max-w-sm text-base leading-7 text-white/45">
-            Выберите страну и
-            подключите eSIM за
-            несколько минут.
+          <p className="roam-subtitle mt-5 max-w-[350px]">
+            Мобильный интернет
+            в путешествиях без
+            пластиковой SIM-карты
+            и поиска местного
+            оператора.
           </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              document
+                .getElementById(
+                  "destinations"
+                )
+                ?.scrollIntoView({
+                  behavior:
+                    "smooth",
+                });
+            }}
+            className="roam-primary mt-7"
+          >
+            Выбрать eSIM
+            <span>→</span>
+          </button>
         </section>
 
-        {/* SEARCH */}
+        <section className="mt-7 grid grid-cols-3 gap-2">
+          <div className="roam-stat">
+            <div className="text-xl">
+              ◎
+            </div>
+            <div className="roam-stat-value">
+              190+
+            </div>
+            <div className="roam-stat-label mt-1">
+              стран
+            </div>
+          </div>
 
-        <div className="mt-10">
-          <input
-            type="search"
-            value={search}
-            onChange={(
-              event
-            ) =>
-              setSearch(
-                event.target
-                  .value
-              )
-            }
-            placeholder="Поиск страны"
-            className="h-16 w-full rounded-3xl border border-white/10 bg-white/[0.05] px-6 text-base text-white outline-none transition placeholder:text-white/25 focus:border-white/20"
-          />
-        </div>
+          <div className="roam-stat">
+            <div className="text-xl">
+              ⚡
+            </div>
+            <div className="roam-stat-value">
+              Быстро
+            </div>
+            <div className="roam-stat-label mt-1">
+              выдача
+            </div>
+          </div>
 
-        {/* LOCATIONS */}
+          <div className="roam-stat">
+            <div className="text-xl">
+              ◇
+            </div>
+            <div className="roam-stat-value">
+              eSIM
+            </div>
+            <div className="roam-stat-label mt-1">
+              без пластика
+            </div>
+          </div>
+        </section>
 
-        <section className="mt-10">
+        <section
+          id="destinations"
+          className="mt-10 scroll-mt-6"
+        >
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <div className="roam-kicker">
+                Destinations
+              </div>
+
+              <h2 className="mt-2 text-2xl font-bold tracking-[-0.035em]">
+                Куда летим?
+              </h2>
+            </div>
+
+            <div className="text-xs text-white/30">
+              {countryLocations.length
+                ? `${countryLocations.length} направлений`
+                : ""}
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex w-12 items-center justify-center text-white/30">
+              ⌕
+            </div>
+
+            <input
+              type="search"
+              value={search}
+              onChange={(event) =>
+                setSearch(
+                  event.target.value
+                )
+              }
+              placeholder="Найти страну"
+              className="roam-search"
+            />
+          </div>
+
           {loading ? (
-            <div className="py-16 text-center text-sm text-white/35">
+            <div className="roam-pulse py-16 text-center text-sm text-white/35">
               Загружаем направления...
             </div>
           ) : filteredLocations.length ===
             0 ? (
-            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-              <div className="text-lg font-semibold">
+            <div className="roam-card-soft mt-4 p-6">
+              <div className="text-lg font-bold">
                 Ничего не найдено
               </div>
 
               <p className="mt-2 text-sm leading-6 text-white/40">
-                Попробуйте изменить
-                запрос.
+                Попробуйте другое
+                название страны.
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="mt-4 space-y-3">
               {filteredLocations.map(
-                (
-                  location
-                ) => (
-                  <button
-                    key={
-                      location.code
-                    }
-                    type="button"
-                    onClick={() =>
-                      openCountry(
-                        location
-                      )
-                    }
-                    className="flex w-full items-center justify-between gap-4 rounded-[28px] border border-white/10 bg-white/[0.045] p-5 text-left transition active:scale-[0.985]"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-xl font-medium">
-                        {
-                          location.name
-                        }
+                (location) => {
+                  const name =
+                    russianName(
+                      location
+                    );
+
+                  return (
+                    <button
+                      key={
+                        location.code
+                      }
+                      type="button"
+                      onClick={() =>
+                        openCountry(
+                          location
+                        )
+                      }
+                      className="roam-glass flex w-full items-center gap-4 rounded-[24px] p-4 text-left transition active:scale-[0.985]"
+                    >
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-white/10 bg-white/[0.055] text-3xl">
+                        {getFlagEmoji(
+                          location.code
+                        )}
                       </div>
 
-                      <div className="mt-2 text-xs uppercase tracking-[0.15em] text-white/30">
-                        {location.continent ??
-                          location.code}
-                      </div>
-                    </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[17px] font-bold">
+                          {name}
+                        </div>
 
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-2xl text-black">
-                      →
-                    </div>
-                  </button>
-                )
+                        <div className="mt-1 text-xs uppercase tracking-[0.13em] text-white/30">
+                          {location.continent ??
+                            location.code}
+                        </div>
+                      </div>
+
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-cyan-200/10 bg-cyan-300/[0.07] text-lg text-cyan-100">
+                        →
+                      </div>
+                    </button>
+                  );
+                }
               )}
             </div>
           )}
         </section>
 
-        {/* BOTTOM NAV */}
-
-        <nav className="fixed bottom-5 left-1/2 z-30 flex w-[calc(100%-40px)] max-w-sm -translate-x-1/2 rounded-3xl border border-white/10 bg-[#151515]/95 p-2 shadow-2xl backdrop-blur-xl">
-          <div className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white text-sm font-semibold text-black">
-            🌍 eSIM
+        <section className="roam-card mt-10 p-6">
+          <div className="roam-kicker">
+            How it works
           </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              router.push(
-                "/my-esims"
-              )
-            }
-            className="flex h-12 flex-1 items-center justify-center rounded-2xl text-sm text-white/50"
-          >
-            📱 Мои eSIM
-          </button>
+          <h2 className="mt-2 text-2xl font-bold tracking-[-0.035em]">
+            Три простых шага
+          </h2>
 
-          {isOwner && (
-            <button
-              type="button"
-              onClick={() =>
-                router.push(
-                  "/admin"
-                )
-              }
-              className="flex h-12 flex-1 items-center justify-center rounded-2xl text-sm text-white/50"
-            >
-              📊 Статистика
-            </button>
-          )}
-        </nav>
+          <div className="mt-6 space-y-5">
+            {[
+              [
+                "01",
+                "Выберите страну",
+                "Найдите направление и подходящий объём интернета.",
+              ],
+              [
+                "02",
+                "Оплатите в Telegram",
+                "Покупка проходит через Telegram Stars.",
+              ],
+              [
+                "03",
+                "Установите eSIM",
+                "QR-код и данные установки появятся автоматически.",
+              ],
+            ].map(
+              ([
+                number,
+                title,
+                text,
+              ]) => (
+                <div
+                  key={number}
+                  className="flex gap-4"
+                >
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] border border-cyan-200/10 bg-cyan-300/[0.07] text-xs font-black text-cyan-100">
+                    {number}
+                  </div>
+
+                  <div>
+                    <div className="text-sm font-bold">
+                      {title}
+                    </div>
+
+                    <div className="mt-1 text-xs leading-5 text-white/38">
+                      {text}
+                    </div>
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        </section>
+
+        <BottomNav
+          isOwner={isOwner}
+        />
       </div>
     </main>
   );

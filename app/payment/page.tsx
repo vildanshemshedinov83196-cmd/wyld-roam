@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   Suspense,
   useEffect,
@@ -9,6 +11,11 @@ import {
 import {
   useSearchParams,
 } from "next/navigation";
+
+import {
+  Brand,
+  RoamBackground,
+} from "@/components/roam-ui";
 
 import {
   getTelegramInitData,
@@ -61,9 +68,13 @@ function durationLabel(
   }
 
   if (
-    unit === "DAY" ||
-    unit === "day" ||
-    unit === "days"
+    [
+      "DAY",
+      "day",
+      "days",
+    ].includes(
+      unit ?? ""
+    )
   ) {
     if (
       duration % 10 === 1 &&
@@ -118,16 +129,16 @@ function PaymentContent() {
   const [
     error,
     setError,
-  ] = useState<string | null>(
-    null
-  );
+  ] = useState<
+    string | null
+  >(null);
 
   const [
     starsAmount,
     setStarsAmount,
-  ] = useState<number | null>(
-    null
-  );
+  ] = useState<
+    number | null
+  >(null);
 
   useEffect(() => {
     const webApp =
@@ -196,6 +207,62 @@ function PaymentContent() {
     loadOrder();
   }, [orderId]);
 
+  async function waitForPaid() {
+    for (
+      let attempt = 0;
+      attempt < 20;
+      attempt++
+    ) {
+      await new Promise(
+        (resolve) =>
+          setTimeout(
+            resolve,
+            1500
+          )
+      );
+
+      try {
+        const response =
+          await fetch(
+            `/api/orders/${encodeURIComponent(
+              orderId
+            )}`,
+            {
+              cache:
+                "no-store",
+            }
+          );
+
+        const result =
+          await response.json();
+
+        if (
+          result.success &&
+          result.order
+        ) {
+          setOrder(
+            result.order
+          );
+
+          if (
+            result.order.status !==
+            "pending_payment"
+          ) {
+            setPaying(false);
+            return;
+          }
+        }
+      } catch (pollError) {
+        console.error(
+          "Payment polling error:",
+          pollError
+        );
+      }
+    }
+
+    setPaying(false);
+  }
+
   async function payWithStars() {
     if (
       !order ||
@@ -228,8 +295,7 @@ function PaymentContent() {
         await fetch(
           "/api/payments/stars/create",
           {
-            method:
-              "POST",
+            method: "POST",
 
             headers: {
               "Content-Type":
@@ -285,12 +351,9 @@ function PaymentContent() {
 
       openInvoice(
         result.invoiceUrl,
-        async (
-          status
-        ) => {
+        async (status) => {
           if (
-            status ===
-            "paid"
+            status === "paid"
           ) {
             await waitForPaid();
           }
@@ -298,8 +361,7 @@ function PaymentContent() {
           if (
             status ===
               "cancelled" ||
-            status ===
-              "failed"
+            status === "failed"
           ) {
             setPaying(false);
           }
@@ -339,10 +401,7 @@ function PaymentContent() {
         ).openTelegramLink;
 
       if (openTelegramLink) {
-        openTelegramLink(
-          url
-        );
-
+        openTelegramLink(url);
         return;
       }
     }
@@ -351,71 +410,9 @@ function PaymentContent() {
       url;
   }
 
-  async function waitForPaid() {
-    const maxAttempts =
-      20;
-
-    for (
-      let attempt = 0;
-      attempt <
-      maxAttempts;
-      attempt++
-    ) {
-      await new Promise(
-        (
-          resolve
-        ) =>
-          setTimeout(
-            resolve,
-            1500
-          )
-      );
-
-      try {
-        const response =
-          await fetch(
-            `/api/orders/${encodeURIComponent(
-              orderId
-            )}`,
-            {
-              cache:
-                "no-store",
-            }
-          );
-
-        const result =
-          await response.json();
-
-        if (
-          result.success &&
-          result.order
-        ) {
-          setOrder(
-            result.order
-          );
-
-          if (
-            result.order.status !==
-            "pending_payment"
-          ) {
-            setPaying(false);
-            return;
-          }
-        }
-      } catch (error) {
-        console.error(
-          "Payment polling error:",
-          error
-        );
-      }
-    }
-
-    setPaying(false);
-  }
-
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050505] text-sm text-white/40">
+      <main className="roam-page flex min-h-screen items-center justify-center text-sm text-white/40">
         Загружаем заказ...
       </main>
     );
@@ -426,10 +423,11 @@ function PaymentContent() {
     !order
   ) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050505] px-6 text-white">
+      <main className="roam-page flex min-h-screen items-center justify-center px-6 text-white">
         <div className="max-w-sm text-center">
-          <div className="text-2xl font-semibold">
-            Не удалось открыть заказ
+          <div className="text-2xl font-bold">
+            Не удалось открыть
+            заказ
           </div>
 
           <div className="mt-4 text-sm leading-6 text-white/40">
@@ -448,79 +446,84 @@ function PaymentContent() {
     order.status ===
     "pending_payment";
 
+  const isReady =
+    order.status ===
+    "esim_ready";
+
   return (
-    <main className="min-h-screen bg-[#050505] text-white">
-      <div className="mx-auto min-h-screen max-w-md px-5 pb-10 pt-8">
-        <header>
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-white/35">
-            WYLD ROAM
+    <main className="roam-page">
+      <RoamBackground />
+
+      <div className="roam-container-no-nav">
+        <Brand />
+
+        <header className="mt-9">
+          <div className="roam-kicker">
+            Secure payment
           </div>
 
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            Оплата
+          <h1 className="mt-3 text-[42px] font-black tracking-[-0.05em]">
+            {isPending
+              ? "Оплата."
+              : isReady
+                ? "Готово."
+                : "Заказ принят."}
           </h1>
 
-          <p className="mt-3 text-sm leading-6 text-white/40">
-            Заказ создан и сохранён
+          <p className="roam-subtitle mt-3">
+            {isPending
+              ? "Оплатите eSIM через Telegram Stars."
+              : "Платёж подтверждён. WYLD ROAM обрабатывает заказ."}
           </p>
         </header>
 
-        <section className="mt-8 rounded-[30px] border border-white/10 bg-white/[0.05] p-6">
+        <section className="roam-card mt-7 p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.2em] text-white/30">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-white/30">
                 Статус
               </div>
 
-              <div className="mt-2 text-lg font-semibold">
+              <div className="mt-2 text-lg font-bold">
                 {statusLabel(
                   order.status
                 )}
               </div>
             </div>
 
-            <div
-              className={
-                isPending
-                  ? "rounded-full bg-white/10 px-3 py-2 text-xs text-white/70"
-                  : "rounded-full bg-white px-3 py-2 text-xs font-semibold text-black"
-              }
-            >
-              {order.status}
+            <div className="roam-chip">
+              {isPending
+                ? "WAITING"
+                : "CONFIRMED"}
             </div>
           </div>
 
-          <div className="my-6 h-px bg-white/10" />
+          <div className="roam-divider my-6" />
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-white/[0.05] p-4">
-              <div className="text-xs text-white/30">
+            <div className="roam-stat">
+              <div className="roam-stat-label">
                 Страна
               </div>
-
-              <div className="mt-2 text-xl font-semibold">
-                {
-                  order.country
-                }
+              <div className="roam-stat-value">
+                {order.country}
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white/[0.05] p-4">
-              <div className="text-xs text-white/30">
+            <div className="roam-stat">
+              <div className="roam-stat-label">
                 Интернет
               </div>
-
-              <div className="mt-2 text-xl font-semibold">
+              <div className="roam-stat-value">
                 {order.data}
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white/[0.05] p-4">
-              <div className="text-xs text-white/30">
+            <div className="roam-stat">
+              <div className="roam-stat-label">
                 Срок
               </div>
-
-              <div className="mt-2 font-semibold">
+              <div className="roam-stat-value">
                 {durationLabel(
                   order.duration,
                   order.durationUnit
@@ -528,71 +531,61 @@ function PaymentContent() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white/[0.05] p-4">
-              <div className="text-xs text-white/30">
+            <div className="roam-stat">
+              <div className="roam-stat-label">
                 Стоимость
               </div>
-
-              <div className="mt-2 font-semibold">
+              <div className="roam-stat-value">
                 $
                 {Number(
                   order.amount
-                ).toFixed(
-                  2
-                )}
+                ).toFixed(2)}
               </div>
             </div>
           </div>
 
-          <div className="mt-6">
-            <div className="text-xs text-white/30">
-              Тариф
-            </div>
-
-            <div className="mt-2 text-base font-medium">
-              {
-                order.planName
-              }
-            </div>
+          <div className="mt-5 text-[11px] text-white/30">
+            Тариф
           </div>
 
-          <div className="mt-6">
-            <div className="text-xs text-white/30">
-              ID заказа
-            </div>
-
-            <div className="mt-2 break-all text-xs leading-5 text-white/45">
-              {order.id}
-            </div>
+          <div className="mt-1 text-sm font-semibold">
+            {order.planName}
           </div>
         </section>
 
         {isPending ? (
           <>
-            <section className="mt-5 rounded-[30px] border border-white/10 bg-white/[0.03] p-6">
-              <div className="text-sm font-semibold">
-                Способ оплаты
+            <section className="roam-card-soft mt-5 p-5">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-white/30">
+                Payment method
               </div>
 
-              <div className="mt-5 flex items-center justify-between rounded-2xl bg-white/[0.05] p-4">
-                <div>
-                  <div className="font-semibold">
+              <div className="mt-4 flex items-center gap-4">
+                <div className="grid h-14 w-14 place-items-center rounded-[18px] bg-white/[0.06] text-3xl">
+                  ⭐
+                </div>
+
+                <div className="flex-1">
+                  <div className="font-bold">
                     Telegram Stars
                   </div>
 
                   <div className="mt-1 text-xs text-white/35">
-                    Оплата внутри Telegram
+                    Встроенная оплата
+                    Telegram
                   </div>
                 </div>
 
-                <div className="text-2xl">
-                  ⭐
-                </div>
+                {starsAmount && (
+                  <div className="text-lg font-black">
+                    {starsAmount} ⭐
+                  </div>
+                )}
               </div>
             </section>
 
             {error && (
-              <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm leading-6 text-red-200">
+              <div className="roam-error mt-5">
                 {error}
               </div>
             )}
@@ -602,16 +595,14 @@ function PaymentContent() {
               onClick={
                 payWithStars
               }
-              disabled={
-                paying
-              }
-              className="mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-white px-5 text-base font-semibold text-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={paying}
+              className="roam-primary mt-6"
             >
               {paying
                 ? "Ожидаем оплату..."
                 : starsAmount
                   ? `Оплатить · ${starsAmount} ⭐`
-                  : "Оплатить ⭐"}
+                  : "Оплатить Stars ⭐"}
             </button>
 
             <button
@@ -619,36 +610,41 @@ function PaymentContent() {
               onClick={
                 openStarsTopUp
               }
-              className="mt-3 flex h-14 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] px-5 text-base font-semibold text-white transition active:scale-[0.98]"
+              className="roam-secondary mt-3"
             >
-              ⭐ Купить Stars
+              Купить Stars
             </button>
 
-            <p className="mt-3 px-5 text-center text-[11px] leading-5 text-white/30">
-              Откроется официальный
-              бот Telegram для
-              покупки Stars.
-            </p>
-
-            <p className="mt-4 px-5 text-center text-[11px] leading-5 text-white/25">
-              eSIM будет выпущена
-              только после
-              подтверждения платежа
+            <p className="mt-4 text-center text-[10px] leading-5 text-white/24">
+              Покупка Stars
+              открывается через
+              официальный сервис
               Telegram.
             </p>
           </>
         ) : (
-          <section className="mt-5 rounded-[30px] border border-white/10 bg-white p-6 text-black">
-            <div className="text-xl font-semibold">
+          <section className="roam-card mt-5 p-6">
+            <div className="grid h-12 w-12 place-items-center rounded-full bg-cyan-300/[0.12] text-xl text-cyan-100">
+              ✓
+            </div>
+
+            <div className="mt-4 text-xl font-black">
               Оплата подтверждена
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-black/60">
-              Заказ оплачен.
-              Следующим этапом
-              WYLD ROAM выпустит
-              вашу eSIM.
+            <p className="mt-2 text-sm leading-6 text-white/43">
+              {isReady
+                ? "Ваша eSIM уже готова к установке."
+                : "eSIM выпускается автоматически. Обычно это занимает немного времени."}
             </p>
+
+            <Link
+              href="/my-esims"
+              className="roam-primary mt-5"
+            >
+              Открыть мои eSIM
+              <span>→</span>
+            </Link>
           </section>
         )}
       </div>
@@ -660,7 +656,7 @@ export default function PaymentPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#050505] text-sm text-white/40">
+        <main className="roam-page flex min-h-screen items-center justify-center text-sm text-white/40">
           Загружаем...
         </main>
       }

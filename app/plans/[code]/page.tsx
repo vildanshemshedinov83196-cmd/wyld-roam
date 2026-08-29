@@ -1,7 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  useParams,
+  useRouter,
+} from "next/navigation";
+
+import {
+  BackButton,
+  Brand,
+  RoamBackground,
+} from "@/components/roam-ui";
 
 type Plan = {
   packageCode: string;
@@ -30,19 +44,29 @@ type Location = {
   subLocations: Location[];
 };
 
-function getFlagEmoji(code: string) {
+function getFlagEmoji(
+  code: string
+) {
   if (code.length !== 2) {
     return "🌍";
   }
 
   return code
     .toUpperCase()
-    .replace(/./g, (char) =>
-      String.fromCodePoint(127397 + char.charCodeAt(0))
+    .replace(
+      /./g,
+      (char) =>
+        String.fromCodePoint(
+          127397 +
+            char.charCodeAt(0)
+        )
     );
 }
 
-function durationLabel(duration: number, unit: string) {
+function durationLabel(
+  duration: number,
+  unit: string
+) {
   if (unit !== "DAY") {
     return `${duration} ${unit}`;
   }
@@ -51,7 +75,10 @@ function durationLabel(duration: number, unit: string) {
     return "1 день";
   }
 
-  if (duration >= 2 && duration <= 4) {
+  if (
+    duration >= 2 &&
+    duration <= 4
+  ) {
     return `${duration} дня`;
   }
 
@@ -62,16 +89,25 @@ function findLocation(
   locations: Location[],
   code: string
 ): Location | null {
-  for (const location of locations) {
-    if (location.code === code) {
+  for (
+    const location
+    of locations
+  ) {
+    if (
+      location.code === code
+    ) {
       return location;
     }
 
-    if (location.subLocations?.length) {
-      const nested = findLocation(
-        location.subLocations,
-        code
-      );
+    if (
+      location.subLocations
+        ?.length
+    ) {
+      const nested =
+        findLocation(
+          location.subLocations,
+          code
+        );
 
       if (nested) {
         return nested;
@@ -88,45 +124,58 @@ function getRussianLocationName(
 ) {
   try {
     if (code.length === 2) {
-      const displayNames = new Intl.DisplayNames(
-        ["ru"],
-        { type: "region" }
-      );
+      const displayNames =
+        new Intl.DisplayNames(
+          ["ru"],
+          {
+            type: "region",
+          }
+        );
 
       const translated =
         displayNames.of(code);
 
       if (
         translated &&
-        translated.toUpperCase() !== code
+        translated.toUpperCase() !==
+          code
       ) {
         return translated;
       }
     }
   } catch {
-    // Если браузер не смог перевести,
-    // используем название eSIMAccess.
+    // fallback below
   }
 
   return fallbackName;
 }
 
 export default function PlansPage() {
-  const params = useParams();
-  const router = useRouter();
+  const params =
+    useParams();
 
-  const code = String(
-    params.code ?? ""
-  ).toUpperCase();
+  const router =
+    useRouter();
 
-  const [plans, setPlans] =
-    useState<Plan[]>([]);
+  const code =
+    String(
+      params.code ?? ""
+    ).toUpperCase();
 
-  const [locations, setLocations] =
-    useState<Location[]>([]);
+  const [
+    plans,
+    setPlans,
+  ] = useState<Plan[]>([]);
 
-  const [loadingPlans, setLoadingPlans] =
-    useState(true);
+  const [
+    locations,
+    setLocations,
+  ] = useState<Location[]>([]);
+
+  const [
+    loadingPlans,
+    setLoadingPlans,
+  ] = useState(true);
 
   const [
     loadingLocations,
@@ -136,20 +185,25 @@ export default function PlansPage() {
   useEffect(() => {
     async function loadPlans() {
       try {
-        const response = await fetch(
-          `/api/plans?country=${encodeURIComponent(
-            code
-          )}`
-        );
+        const response =
+          await fetch(
+            `/api/plans?country=${encodeURIComponent(
+              code
+            )}`
+          );
 
         const data =
           await response.json();
 
         if (data.success) {
-          setPlans(data.plans ?? []);
+          setPlans(
+            data.plans ?? []
+          );
         }
       } finally {
-        setLoadingPlans(false);
+        setLoadingPlans(
+          false
+        );
       }
     }
 
@@ -162,18 +216,23 @@ export default function PlansPage() {
     async function loadLocations() {
       try {
         const response =
-          await fetch("/api/locations");
+          await fetch(
+            "/api/locations"
+          );
 
         const data =
           await response.json();
 
         if (data.success) {
           setLocations(
-            data.locations ?? []
+            data.locations ??
+              []
           );
         }
       } finally {
-        setLoadingLocations(false);
+        setLoadingLocations(
+          false
+        );
       }
     }
 
@@ -181,50 +240,52 @@ export default function PlansPage() {
   }, []);
 
   const regularPlans =
-    useMemo(() => {
-      return plans
-        .filter(
-          (plan) =>
-            plan.dataType !== 2
-        )
-        .sort((a, b) => {
-          if (
-            a.volumeBytes !==
-            b.volumeBytes
-          ) {
-            return (
-              a.volumeBytes -
+    useMemo(
+      () =>
+        plans
+          .filter(
+            (plan) =>
+              plan.dataType !==
+              2
+          )
+          .sort(
+            (a, b) =>
+              a.volumeBytes !==
               b.volumeBytes
-            );
-          }
-
-          return (
-            a.duration - b.duration
-          );
-        });
-    }, [plans]);
+                ? a.volumeBytes -
+                  b.volumeBytes
+                : a.duration -
+                  b.duration
+          ),
+      [plans]
+    );
 
   const dailyPlans =
-    useMemo(() => {
-      return plans
-        .filter(
-          (plan) =>
-            plan.dataType === 2
-        )
-        .sort(
-          (a, b) =>
-            a.volumeBytes -
-            b.volumeBytes
-        );
-    }, [plans]);
+    useMemo(
+      () =>
+        plans
+          .filter(
+            (plan) =>
+              plan.dataType ===
+              2
+          )
+          .sort(
+            (a, b) =>
+              a.volumeBytes -
+              b.volumeBytes
+          ),
+      [plans]
+    );
 
   const currentLocation =
-    useMemo(() => {
-      return findLocation(
-        locations,
-        code
-      );
-    }, [locations, code]);
+    useMemo(
+      () =>
+        findLocation(
+          locations,
+          code
+        ),
+      [locations, code]
+    );
 
   const locationName =
     useMemo(() => {
@@ -236,7 +297,10 @@ export default function PlansPage() {
         code,
         currentLocation.name
       );
-    }, [currentLocation, code]);
+    }, [
+      currentLocation,
+      code,
+    ]);
 
   const flag =
     getFlagEmoji(code);
@@ -245,33 +309,77 @@ export default function PlansPage() {
     loadingPlans ||
     loadingLocations;
 
+  function selectPlan(
+    plan: Plan
+  ) {
+    const params =
+      new URLSearchParams({
+        package:
+          plan.packageCode,
+        country: code,
+        planName:
+          plan.name,
+        data:
+          plan.data,
+        duration:
+          String(
+            plan.duration
+          ),
+        durationUnit:
+          plan.durationUnit,
+        amount:
+          String(
+            plan.retailPrice
+          ),
+        networks:
+          plan.operators
+            .map(
+              (operator) =>
+                `${operator.name} ${operator.network}`
+            )
+            .join(", "),
+      });
+
+    router.push(
+      `/checkout?${params.toString()}`
+    );
+  }
+
   function renderPlan(
     plan: Plan,
     daily = false
   ) {
     return (
-<button
-  key={plan.packageCode}
-  onClick={() =>
-    router.push(
-      `/checkout?package=${encodeURIComponent(
-        plan.packageCode
-      )}&country=${encodeURIComponent(code)}`
-    )
-  }
-  className="w-full rounded-3xl border border-white/10 bg-white/[0.05] p-5 text-left transition active:scale-[0.98]"
->
+      <button
+        key={
+          plan.packageCode
+        }
+        type="button"
+        onClick={() =>
+          selectPlan(plan)
+        }
+        className="roam-card w-full p-5 text-left transition active:scale-[0.985]"
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-2xl font-semibold">
+            <div className="roam-chip">
+              {daily
+                ? "DAILY"
+                : "DATA"}
+            </div>
+
+            <div className="mt-4 text-[28px] font-black tracking-[-0.045em]">
               {daily
                 ? `${plan.data} / день`
                 : plan.data}
             </div>
 
-            <div className="mt-1 text-sm text-white/45">
+            <div className="mt-1 text-sm text-white/42">
               {daily
-                ? "Дневной пакет"
+                ? durationLabel(
+                    plan.duration,
+                    plan.durationUnit
+                  )
                 : durationLabel(
                     plan.duration,
                     plan.durationUnit
@@ -280,116 +388,140 @@ export default function PlansPage() {
           </div>
 
           <div className="text-right">
-            <div className="text-2xl font-semibold">
+            <div className="text-[26px] font-black tracking-[-0.04em]">
               $
               {plan.retailPrice.toFixed(
                 2
               )}
             </div>
 
-            <div className="mt-1 text-xs text-white/35">
-              {plan.currency}
+            <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/28">
+              total
             </div>
           </div>
         </div>
 
-        <div className="my-5 h-px bg-white/10" />
+        <div className="roam-divider my-5" />
 
-        <div className="space-y-2 text-sm text-white/55">
+        <div className="space-y-2.5 text-[13px] leading-5 text-white/48">
           {plan.speed && (
-            <div>
-              Скорость: {plan.speed}
+            <div className="flex gap-2">
+              <span className="text-cyan-200">
+                ⚡
+              </span>
+              <span>
+                {plan.speed}
+              </span>
             </div>
           )}
 
           {plan.operators.length >
             0 && (
-            <div>
-              Сети:{" "}
-              {plan.operators
-                .map(
-                  (operator) =>
-                    `${operator.name} ${operator.network}`
-                )
-                .join(", ")}
+            <div className="flex gap-2">
+              <span className="text-cyan-200">
+                ◉
+              </span>
+              <span>
+                {plan.operators
+                  .map(
+                    (operator) =>
+                      `${operator.name} ${operator.network}`
+                  )
+                  .join(", ")}
+              </span>
             </div>
           )}
 
           {daily &&
             plan.fupPolicy && (
-              <div>
-                После дневного
-                лимита:{" "}
-                {plan.fupPolicy}
+              <div className="flex gap-2">
+                <span className="text-cyan-200">
+                  ∞
+                </span>
+                <span>
+                  После лимита:{" "}
+                  {plan.fupPolicy}
+                </span>
               </div>
             )}
 
           {plan.topUpSupported && (
-            <div>
-              Доступно пополнение
+            <div className="flex gap-2">
+              <span className="text-cyan-200">
+                +
+              </span>
+              <span>
+                Можно пополнять
+              </span>
             </div>
           )}
         </div>
 
-        <div className="mt-5 flex h-12 items-center justify-center rounded-2xl bg-white font-semibold text-black">
+        <div className="roam-primary mt-5">
           Выбрать тариф
+          <span>→</span>
         </div>
       </button>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white">
-      <div className="mx-auto min-h-screen max-w-md px-5 pb-12 pt-6">
-        <button
-          onClick={() =>
-            router.back()
-          }
-          className="mb-8 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-xl"
-        >
-          ←
-        </button>
+    <main className="roam-page">
+      <RoamBackground />
 
-        <header className="mb-8">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-white/40">
-            WYLD ROAM
-          </div>
+      <div className="roam-container-no-nav">
+        <div className="flex items-center justify-between">
+          <BackButton />
+          <Brand />
+        </div>
 
-          <div className="flex items-center gap-3">
-            <div className="text-4xl">
+        <header className="mt-9">
+          <div className="flex items-center gap-4">
+            <div className="grid h-[72px] w-[72px] place-items-center rounded-[24px] border border-white/10 bg-white/[0.055] text-4xl">
               {flag}
             </div>
 
-            <div>
-              <h1 className="text-3xl font-semibold">
+            <div className="min-w-0">
+              <div className="roam-kicker">
+                eSIM plans
+              </div>
+
+              <h1 className="mt-1 truncate text-[34px] font-black tracking-[-0.045em]">
                 {loadingLocations
                   ? "Загрузка..."
                   : locationName}
               </h1>
-
-              <p className="mt-1 text-sm text-white/45">
-                Выберите подходящий
-                тариф
-              </p>
             </div>
           </div>
+
+          <p className="roam-subtitle mt-5">
+            Выберите объём
+            интернета и срок
+            действия тарифа.
+          </p>
         </header>
 
         {loading ? (
-          <div className="py-12 text-center text-sm text-white/40">
+          <div className="roam-pulse py-20 text-center text-sm text-white/35">
             Загружаем тарифы...
           </div>
         ) : (
           <>
             {regularPlans.length >
               0 && (
-              <section>
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">
-                    Интернет-пакеты
-                  </h2>
+              <section className="mt-9">
+                <div className="mb-4 flex items-end justify-between">
+                  <div>
+                    <div className="roam-kicker">
+                      Packages
+                    </div>
 
-                  <div className="text-xs text-white/35">
+                    <h2 className="mt-2 text-xl font-bold">
+                      Интернет-пакеты
+                    </h2>
+                  </div>
+
+                  <div className="text-xs text-white/30">
                     {
                       regularPlans.length
                     }{" "}
@@ -409,26 +541,21 @@ export default function PlansPage() {
             {dailyPlans.length >
               0 && (
               <section className="mt-10">
-                <div className="mb-2 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">
+                <div className="mb-4">
+                  <div className="roam-kicker">
+                    Daily
+                  </div>
+
+                  <h2 className="mt-2 text-xl font-bold">
                     Пакеты на день
                   </h2>
 
-                  <div className="text-xs text-white/35">
-                    {
-                      dailyPlans.length
-                    }{" "}
-                    тарифов
-                  </div>
+                  <p className="mt-2 text-xs leading-5 text-white/37">
+                    Дневной объём
+                    обновляется согласно
+                    условиям тарифа.
+                  </p>
                 </div>
-
-                <p className="mb-4 text-sm leading-6 text-white/40">
-                  После использования
-                  дневного объёма
-                  скорость может быть
-                  ограничена до
-                  следующего дня.
-                </p>
 
                 <div className="space-y-4">
                   {dailyPlans.map(
@@ -442,10 +569,17 @@ export default function PlansPage() {
               </section>
             )}
 
-            {plans.length === 0 && (
-              <div className="py-12 text-center text-sm text-white/40">
-                Для этого направления
-                тарифов пока нет
+            {plans.length ===
+              0 && (
+              <div className="roam-card-soft mt-10 p-7 text-center">
+                <div className="text-lg font-bold">
+                  Тарифов пока нет
+                </div>
+
+                <p className="mt-2 text-sm text-white/40">
+                  Попробуйте другое
+                  направление.
+                </p>
               </div>
             )}
           </>

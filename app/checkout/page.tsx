@@ -1,20 +1,45 @@
 "use client";
 
-import Link from "next/link";
 import {
   Suspense,
   useMemo,
   useState,
 } from "react";
+
 import {
   useRouter,
   useSearchParams,
 } from "next/navigation";
 
 import {
+  BackButton,
+  Brand,
+  RoamBackground,
+} from "@/components/roam-ui";
+
+import {
   getTelegramInitData,
   getTelegramWebApp,
 } from "@/lib/telegram-client";
+
+function getFlagEmoji(
+  code: string
+) {
+  if (code.length !== 2) {
+    return "🌍";
+  }
+
+  return code
+    .toUpperCase()
+    .replace(
+      /./g,
+      (char) =>
+        String.fromCodePoint(
+          127397 +
+            char.charCodeAt(0)
+        )
+    );
+}
 
 function CheckoutContent() {
   const router =
@@ -23,20 +48,18 @@ function CheckoutContent() {
   const searchParams =
     useSearchParams();
 
-  const [creating, setCreating] =
-    useState(false);
+  const [
+    creating,
+    setCreating,
+  ] = useState(false);
 
-  const [error, setError] =
-    useState<string | null>(
-      null
-    );
+  const [
+    error,
+    setError,
+  ] = useState<
+    string | null
+  >(null);
 
-  /*
-   * Поддерживаем несколько вариантов
-   * названия параметров, чтобы старые
-   * ссылки WYLD ROAM тоже продолжали
-   * работать.
-   */
   const packageCode =
     searchParams.get(
       "packageCode"
@@ -57,14 +80,6 @@ function CheckoutContent() {
       ""
     ).toUpperCase();
 
-  /*
-   * Эти данные нужны только
-   * для красивого отображения.
-   *
-   * Сервер им НЕ доверяет:
-   * настоящую цену сервер всё равно
-   * заново получает у eSIMAccess.
-   */
   const planName =
     searchParams.get(
       "planName"
@@ -77,32 +92,27 @@ function CheckoutContent() {
   const data =
     searchParams.get(
       "data"
-    ) ??
-    "";
+    ) ?? "";
 
   const duration =
     searchParams.get(
       "duration"
-    ) ??
-    "";
+    ) ?? "";
 
   const durationUnit =
     searchParams.get(
       "durationUnit"
-    ) ??
-    "DAY";
+    ) ?? "DAY";
 
   const amount =
     searchParams.get(
       "amount"
-    ) ??
-    "";
+    ) ?? "";
 
   const networks =
     searchParams.get(
       "networks"
-    ) ??
-    "";
+    ) ?? "";
 
   const durationLabel =
     useMemo(() => {
@@ -114,15 +124,21 @@ function CheckoutContent() {
         Number(duration);
 
       if (
-        !Number.isFinite(value)
+        !Number.isFinite(
+          value
+        )
       ) {
         return duration;
       }
 
       if (
-        durationUnit === "DAY" ||
-        durationUnit === "day" ||
-        durationUnit === "days"
+        [
+          "DAY",
+          "day",
+          "days",
+        ].includes(
+          durationUnit
+        )
       ) {
         if (
           value % 10 === 1 &&
@@ -135,8 +151,10 @@ function CheckoutContent() {
           value % 10 >= 2 &&
           value % 10 <= 4 &&
           !(
-            value % 100 >= 12 &&
-            value % 100 <= 14
+            value % 100 >=
+              12 &&
+            value % 100 <=
+              14
           )
         ) {
           return `${value} дня`;
@@ -157,9 +175,8 @@ function CheckoutContent() {
       !country
     ) {
       setError(
-        "Не удалось определить выбранный тариф. Вернитесь назад и выберите eSIM ещё раз."
+        "Не удалось определить тариф. Вернитесь назад и выберите eSIM ещё раз."
       );
-
       return;
     }
 
@@ -167,14 +184,6 @@ function CheckoutContent() {
     setError(null);
 
     try {
-      /*
-       * Получаем initData именно
-       * из Telegram Mini App.
-       *
-       * При обычном localhost
-       * здесь будет пустая строка —
-       * это нормально для разработки.
-       */
       const initData =
         getTelegramInitData();
 
@@ -192,10 +201,11 @@ function CheckoutContent() {
                 initData,
             },
 
-            body: JSON.stringify({
-              packageCode,
-              country,
-            }),
+            body:
+              JSON.stringify({
+                packageCode,
+                country,
+              }),
           }
         );
 
@@ -213,10 +223,6 @@ function CheckoutContent() {
         );
       }
 
-      /*
-       * После создания заказа
-       * открываем страницу оплаты.
-       */
       router.push(
         `/payment?order=${encodeURIComponent(
           result.order.id
@@ -238,228 +244,196 @@ function CheckoutContent() {
     }
   }
 
-  function expandTelegram() {
-    const webApp =
-      getTelegramWebApp();
-
-    if (!webApp) {
-      return;
-    }
-
-    webApp.ready();
-    webApp.expand();
-  }
-
-  /*
-   * При рендере внутри Telegram
-   * expand безопасно можно вызвать
-   * перед взаимодействием.
-   */
   if (
     typeof window !==
     "undefined"
   ) {
-    expandTelegram();
+    const webApp =
+      getTelegramWebApp();
+
+    if (webApp) {
+      webApp.ready();
+      webApp.expand();
+    }
   }
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white">
-      <div className="mx-auto min-h-screen max-w-md px-5 pb-10 pt-7">
-        {/* Верхняя панель */}
-        <header className="mb-8">
-          <Link
+    <main className="roam-page">
+      <RoamBackground />
+
+      <div className="roam-container-no-nav">
+        <div className="flex items-center justify-between">
+          <BackButton
             href={
               country
                 ? `/plans/${country}`
                 : "/"
             }
-            className="mb-7 inline-flex items-center gap-2 text-sm text-white/45 transition hover:text-white"
-          >
-            <span>
-              ←
-            </span>
+          />
 
-            <span>
-              Назад
-            </span>
-          </Link>
+          <Brand />
+        </div>
 
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-white/35">
-            WYLD ROAM
+        <header className="mt-9">
+          <div className="roam-kicker">
+            Checkout
           </div>
 
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            Оформление
+          <h1 className="mt-3 text-[40px] font-black tracking-[-0.05em]">
+            Всё готово.
           </h1>
 
-          <p className="mt-3 max-w-sm text-sm leading-6 text-white/45">
-            Проверьте тариф перед
-            созданием заказа
+          <p className="roam-subtitle mt-3">
+            Проверьте выбранный
+            тариф перед оплатой.
           </p>
         </header>
 
-        {/* Основная карточка */}
-        <section className="overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.05]">
-          <div className="p-6">
-            <div className="flex items-start justify-between gap-5">
-              <div>
-                <div className="text-xs uppercase tracking-[0.22em] text-white/30">
-                  Направление
-                </div>
+        <section className="roam-card mt-7 p-6">
+          <div className="flex items-center gap-4">
+            <div className="grid h-16 w-16 shrink-0 place-items-center rounded-[21px] border border-white/10 bg-white/[0.055] text-3xl">
+              {getFlagEmoji(
+                country
+              )}
+            </div>
 
-                <div className="mt-2 text-3xl font-semibold">
-                  {country ||
-                    "—"}
-                </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs uppercase tracking-[0.17em] text-white/30">
+                Направление
               </div>
 
-              {amount && (
-                <div className="text-right">
-                  <div className="text-xs text-white/30">
-                    Итого
+              <div className="mt-1 text-2xl font-black">
+                {country || "—"}
+              </div>
+            </div>
+
+            {amount && (
+              <div className="text-right">
+                <div className="text-xs text-white/30">
+                  Итого
+                </div>
+
+                <div className="mt-1 text-2xl font-black">
+                  $
+                  {Number(
+                    amount
+                  ).toFixed(2)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="roam-divider my-6" />
+
+          <div className="text-xs uppercase tracking-[0.17em] text-white/30">
+            Тариф
+          </div>
+
+          <div className="mt-2 text-xl font-bold">
+            {planName}
+          </div>
+
+          {(data ||
+            durationLabel) && (
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {data && (
+                <div className="roam-stat">
+                  <div className="roam-stat-label">
+                    Интернет
                   </div>
 
-                  <div className="mt-2 text-2xl font-semibold">
-                    $
-                    {Number(
-                      amount
-                    ).toFixed(
-                      2
-                    )}
+                  <div className="roam-stat-value">
+                    {data}
+                  </div>
+                </div>
+              )}
+
+              {durationLabel && (
+                <div className="roam-stat">
+                  <div className="roam-stat-label">
+                    Срок
+                  </div>
+
+                  <div className="roam-stat-value">
+                    {
+                      durationLabel
+                    }
                   </div>
                 </div>
               )}
             </div>
+          )}
 
-            <div className="my-6 h-px bg-white/10" />
-
-            <div>
-              <div className="text-xs uppercase tracking-[0.22em] text-white/30">
-                Тариф
+          {networks && (
+            <div className="roam-card-soft mt-4 p-4">
+              <div className="text-[11px] text-white/30">
+                Доступные сети
               </div>
 
-              <div className="mt-2 text-xl font-semibold">
-                {planName}
+              <div className="mt-2 text-sm leading-6 text-white/65">
+                {networks}
               </div>
             </div>
-
-            {(data ||
-              durationLabel) && (
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                {data && (
-                  <div className="rounded-2xl bg-white/[0.05] p-4">
-                    <div className="text-xs text-white/30">
-                      Интернет
-                    </div>
-
-                    <div className="mt-2 font-semibold">
-                      {data}
-                    </div>
-                  </div>
-                )}
-
-                {durationLabel && (
-                  <div className="rounded-2xl bg-white/[0.05] p-4">
-                    <div className="text-xs text-white/30">
-                      Срок
-                    </div>
-
-                    <div className="mt-2 font-semibold">
-                      {
-                        durationLabel
-                      }
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {networks && (
-              <div className="mt-5">
-                <div className="text-xs text-white/30">
-                  Сети
-                </div>
-
-                <div className="mt-2 text-sm leading-6 text-white/70">
-                  {networks}
-                </div>
-              </div>
-            )}
-          </div>
+          )}
         </section>
 
-        {/* Что произойдёт */}
-        <section className="mt-5 rounded-[30px] border border-white/10 bg-white/[0.03] p-6">
-          <div className="text-sm font-semibold">
-            Что произойдёт после
-            оплаты
+        <section className="roam-card-soft mt-5 p-5">
+          <div className="text-sm font-bold">
+            После оплаты
           </div>
 
           <div className="mt-5 space-y-5">
-            <div className="flex gap-4">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-black">
-                1
-              </div>
+            {[
+              [
+                "1",
+                "Подтверждаем платёж",
+                "Telegram сообщает WYLD ROAM об успешной оплате.",
+              ],
+              [
+                "2",
+                "Выпускаем eSIM",
+                "Профиль автоматически заказывается у оператора.",
+              ],
+              [
+                "3",
+                "Готово к установке",
+                "QR-код появится в разделе «Мои eSIM».",
+              ],
+            ].map(
+              ([
+                number,
+                title,
+                text,
+              ]) => (
+                <div
+                  key={number}
+                  className="flex gap-4"
+                >
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[13px] bg-cyan-300/[0.09] text-xs font-black text-cyan-100">
+                    {number}
+                  </div>
 
-              <div>
-                <div className="text-sm font-medium">
-                  Подтверждаем платёж
+                  <div>
+                    <div className="text-sm font-bold">
+                      {title}
+                    </div>
+
+                    <div className="mt-1 text-xs leading-5 text-white/37">
+                      {text}
+                    </div>
+                  </div>
                 </div>
-
-                <div className="mt-1 text-xs leading-5 text-white/35">
-                  WYLD ROAM автоматически
-                  получает подтверждение
-                  оплаты.
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-black">
-                2
-              </div>
-
-              <div>
-                <div className="text-sm font-medium">
-                  Выпускаем eSIM
-                </div>
-
-                <div className="mt-1 text-xs leading-5 text-white/35">
-                  После подтверждения
-                  оплаты eSIM будет
-                  заказана автоматически.
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-black">
-                3
-              </div>
-
-              <div>
-                <div className="text-sm font-medium">
-                  Получаете установку
-                </div>
-
-                <div className="mt-1 text-xs leading-5 text-white/35">
-                  QR-код и данные eSIM
-                  появятся в разделе
-                  «Мои eSIM».
-                </div>
-              </div>
-            </div>
+              )
+            )}
           </div>
         </section>
 
-        {/* Ошибка */}
         {error && (
-          <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm leading-6 text-red-200">
+          <div className="roam-error mt-5">
             {error}
           </div>
         )}
 
-        {/* Кнопка */}
         <button
           type="button"
           onClick={
@@ -470,24 +444,21 @@ function CheckoutContent() {
             !packageCode ||
             !country
           }
-          className="mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-white px-5 text-base font-semibold text-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+          className="roam-primary mt-6"
         >
           {creating
             ? "Создаём заказ..."
             : amount
               ? `Перейти к оплате · $${Number(
                   amount
-                ).toFixed(
-                  2
-                )}`
+                ).toFixed(2)}`
               : "Перейти к оплате"}
         </button>
 
-        <p className="mt-4 px-4 text-center text-[11px] leading-5 text-white/25">
+        <p className="mt-4 px-6 text-center text-[10px] leading-5 text-white/24">
           Финальная стоимость
-          рассчитывается сервером
-          WYLD ROAM по актуальному
-          тарифу поставщика.
+          проверяется сервером
+          перед созданием заказа.
         </p>
       </div>
     </main>
@@ -498,7 +469,7 @@ export default function CheckoutPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#050505] text-sm text-white/40">
+        <main className="roam-page flex min-h-screen items-center justify-center text-sm text-white/40">
           Загружаем...
         </main>
       }

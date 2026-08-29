@@ -8,6 +8,12 @@ import {
 import Link from "next/link";
 
 import {
+  BottomNav,
+  Brand,
+  RoamBackground,
+} from "@/components/roam-ui";
+
+import {
   getTelegramInitData,
   getTelegramWebApp,
 } from "@/lib/telegram-client";
@@ -49,6 +55,46 @@ function statusLabel(
   }
 }
 
+function getFlagEmoji(
+  code: string
+) {
+  if (code.length !== 2) {
+    return "🌍";
+  }
+
+  return code
+    .toUpperCase()
+    .replace(
+      /./g,
+      (char) =>
+        String.fromCodePoint(
+          127397 +
+            char.charCodeAt(0)
+        )
+    );
+}
+
+function getCountryName(
+  code: string
+) {
+  try {
+    const names =
+      new Intl.DisplayNames(
+        ["ru"],
+        {
+          type: "region",
+        }
+      );
+
+    return (
+      names.of(code) ??
+      code
+    );
+  } catch {
+    return code;
+  }
+}
+
 function formatBytes(
   value: number | null
 ) {
@@ -71,13 +117,12 @@ function formatBytes(
     )} GB`;
   }
 
-  const mb =
-    value /
-    1024 /
-    1024;
-
   return `${Math.max(
-    Math.round(mb),
+    Math.round(
+      value /
+        1024 /
+        1024
+    ),
     0
   )} MB`;
 }
@@ -146,7 +191,6 @@ async function copyText(
     await navigator.clipboard.writeText(
       value
     );
-
     return true;
   } catch {
     return false;
@@ -177,9 +221,9 @@ export default function MyEsimsPage() {
   const [
     copied,
     setCopied,
-  ] = useState<string | null>(
-    null
-  );
+  ] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     const webApp =
@@ -234,7 +278,6 @@ export default function MyEsimsPage() {
           "Load eSIMs error:",
           error
         );
-
         return [];
       } finally {
         setLoading(false);
@@ -265,14 +308,14 @@ export default function MyEsimsPage() {
 
       try {
         for (
-          const esim of pending
+          const esim
+          of pending
         ) {
           try {
             await fetch(
               "/api/esim/issue",
               {
-                method:
-                  "POST",
+                method: "POST",
 
                 headers: {
                   "Content-Type":
@@ -313,8 +356,7 @@ export default function MyEsimsPage() {
           await fetch(
             "/api/esim/recover",
             {
-              method:
-                "POST",
+              method: "POST",
 
               headers: {
                 "Content-Type":
@@ -331,13 +373,9 @@ export default function MyEsimsPage() {
             }
           );
 
-        const data =
-          await response.json();
-
         if (!response.ok) {
           console.error(
-            "eSIM recovery failed:",
-            data
+            "eSIM recovery failed"
           );
         }
       } catch (error) {
@@ -349,27 +387,12 @@ export default function MyEsimsPage() {
     }
 
     async function run() {
-      /*
-       * Сначала восстанавливаем оплаченные
-       * заказы, которые могли зависнуть
-       * после Telegram payment webhook.
-       */
       await recoverPaidOrders();
 
-      /*
-       * После recovery заново получаем
-       * актуальный список eSIM.
-       */
       const list =
         await loadEsims();
 
-      /*
-       * Если поставщик ещё готовит профиль,
-       * существующая логика дотягивает его.
-       */
-      await syncPending(
-        list
-      );
+      await syncPending(list);
     }
 
     run();
@@ -380,9 +403,7 @@ export default function MyEsimsPage() {
     value: string
   ) {
     const success =
-      await copyText(
-        value
-      );
+      await copyText(value);
 
     if (!success) {
       return;
@@ -391,14 +412,13 @@ export default function MyEsimsPage() {
     setCopied(key);
 
     window.setTimeout(
-      () => {
+      () =>
         setCopied(
           (current) =>
             current === key
               ? null
               : current
-        );
-      },
+        ),
       1500
     );
   }
@@ -409,82 +429,90 @@ export default function MyEsimsPage() {
     const url =
       getInstallUrl(esim);
 
-    if (!url) {
-      return;
+    if (url) {
+      window.location.href =
+        url;
     }
-
-    window.location.href =
-      url;
   }
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white">
-      <div className="mx-auto min-h-screen max-w-md px-5 pb-28 pt-8">
-        <header className="mb-8">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-white/40">
-            WYLD ROAM
+    <main className="roam-page">
+      <RoamBackground />
+
+      <div className="roam-container">
+        <Brand />
+
+        <header className="mt-9">
+          <div className="roam-kicker">
+            Your connectivity
           </div>
 
-          <h1 className="text-4xl font-semibold">
+          <h1 className="mt-3 text-[42px] font-black tracking-[-0.055em]">
             Мои eSIM
           </h1>
 
-          <p className="mt-3 text-sm text-white/45">
-            Ваши eSIM, установка
-            и управление
+          <p className="roam-subtitle mt-3">
+            Установка, данные
+            подключения и статус
+            ваших eSIM.
           </p>
         </header>
 
         {syncing && (
-          <div className="mb-5 rounded-3xl border border-white/10 bg-white/[0.07] p-5">
-            <div className="text-sm font-semibold">
+          <div className="roam-card-soft roam-pulse mt-6 p-5">
+            <div className="font-bold">
               Подготавливаем eSIM
             </div>
 
-            <div className="mt-2 text-sm text-white/45">
+            <div className="mt-1 text-xs text-white/40">
               Получаем профиль
-              от оператора...
+              оператора...
             </div>
           </div>
         )}
 
         {loading ? (
-          <div className="py-16 text-center text-sm text-white/40">
+          <div className="roam-pulse py-20 text-center text-sm text-white/35">
             Загружаем...
           </div>
         ) : !telegramMode ? (
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6">
-            <div className="text-xl font-semibold">
+          <div className="roam-card mt-7 p-6">
+            <div className="text-xl font-black">
               Откройте WYLD ROAM
               в Telegram
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-white/45">
-              Этот раздел привязан
-              к вашему Telegram-аккаунту.
+            <p className="mt-3 text-sm leading-6 text-white/42">
+              Ваши eSIM привязаны
+              к Telegram-аккаунту.
             </p>
           </div>
-        ) : esims.length === 0 ? (
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6">
-            <div className="text-xl font-semibold">
-              Пока пусто
+        ) : esims.length ===
+          0 ? (
+          <div className="roam-card mt-7 p-6">
+            <div className="grid h-14 w-14 place-items-center rounded-[18px] bg-cyan-300/[0.09] text-2xl text-cyan-100">
+              ◇
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-white/45">
-              После покупки ваша
-              eSIM появится здесь
+            <div className="mt-5 text-xl font-black">
+              Здесь пока пусто
+            </div>
+
+            <p className="mt-2 text-sm leading-6 text-white/42">
+              Купленная eSIM
+              появится здесь
               автоматически.
             </p>
 
             <Link
               href="/"
-              className="mt-6 flex h-12 items-center justify-center rounded-2xl bg-white font-semibold text-black"
+              className="roam-primary mt-6"
             >
               Выбрать eSIM
             </Link>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="mt-7 space-y-5">
             {esims.map(
               (esim) => {
                 const remaining =
@@ -517,28 +545,32 @@ export default function MyEsimsPage() {
 
                 return (
                   <article
-                    key={
-                      esim.id
-                    }
-                    className="overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.05]"
+                    key={esim.id}
+                    className="roam-card"
                   >
                     <div className="p-5">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="text-3xl font-semibold">
-                            {
+                      <div className="flex items-start gap-4">
+                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] border border-white/10 bg-white/[0.055] text-3xl">
+                          {getFlagEmoji(
+                            esim.country_code
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xl font-black">
+                            {getCountryName(
                               esim.country_code
-                            }
+                            )}
                           </div>
 
-                          <div className="mt-1 text-sm text-white/40">
+                          <div className="mt-1 truncate text-xs text-white/30">
                             {
                               esim.package_code
                             }
                           </div>
                         </div>
 
-                        <div className="rounded-full bg-white/10 px-3 py-2 text-xs">
+                        <div className="roam-chip">
                           {statusLabel(
                             esim.status
                           )}
@@ -549,29 +581,25 @@ export default function MyEsimsPage() {
                         expires) && (
                         <div className="mt-5 grid grid-cols-2 gap-3">
                           {remaining && (
-                            <div className="rounded-2xl bg-white/[0.06] p-4">
-                              <div className="text-xs text-white/35">
+                            <div className="roam-stat">
+                              <div className="roam-stat-label">
                                 Осталось
                               </div>
 
-                              <div className="mt-1 font-semibold">
-                                {
-                                  remaining
-                                }
+                              <div className="roam-stat-value">
+                                {remaining}
                               </div>
                             </div>
                           )}
 
                           {expires && (
-                            <div className="rounded-2xl bg-white/[0.06] p-4">
-                              <div className="text-xs text-white/35">
+                            <div className="roam-stat">
+                              <div className="roam-stat-label">
                                 Действует до
                               </div>
 
-                              <div className="mt-1 font-semibold">
-                                {
-                                  expires
-                                }
+                              <div className="roam-stat-value text-[14px]">
+                                {expires}
                               </div>
                             </div>
                           )}
@@ -580,11 +608,14 @@ export default function MyEsimsPage() {
 
                       {esim.status ===
                         "pending" && (
-                        <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-white/50">
+                        <div className="roam-card-soft mt-5 p-4 text-xs leading-5 text-white/42">
                           Профиль уже
-                          заказан. Обычно
-                          подготовка занимает
-                          немного времени.
+                          заказан у
+                          оператора.
+                          Страница
+                          автоматически
+                          продолжит
+                          получение eSIM.
                         </div>
                       )}
 
@@ -592,9 +623,18 @@ export default function MyEsimsPage() {
                         "ready" && (
                         <>
                           {qrIsUrl && (
-                            <div className="mt-6 rounded-3xl bg-white p-5">
-                              <div className="mb-4 text-center text-sm font-semibold text-black">
-                                QR-код установки
+                            <div className="mt-6 rounded-[26px] bg-white p-5">
+                              <div className="text-center">
+                                <div className="text-sm font-black text-[#071013]">
+                                  QR-код
+                                  установки
+                                </div>
+
+                                <div className="mt-1 text-[11px] text-black/40">
+                                  Отсканируйте
+                                  с другого
+                                  устройства
+                                </div>
                               </div>
 
                               <img
@@ -602,16 +642,8 @@ export default function MyEsimsPage() {
                                   esim.qr_code!
                                 }
                                 alt="QR-код eSIM"
-                                className="mx-auto aspect-square w-full max-w-[260px] object-contain"
+                                className="mx-auto mt-4 aspect-square w-full max-w-[245px] object-contain"
                               />
-
-                              <div className="mt-4 text-center text-xs leading-5 text-black/50">
-                                Откройте этот
-                                QR-код на другом
-                                устройстве и
-                                отсканируйте его
-                                телефоном.
-                              </div>
                             </div>
                           )}
 
@@ -623,106 +655,118 @@ export default function MyEsimsPage() {
                                   esim
                                 )
                               }
-                              className="mt-5 flex h-14 w-full items-center justify-center rounded-2xl bg-white text-base font-semibold text-black"
+                              className="roam-primary mt-5"
                             >
-                              Установить eSIM
+                              Установить
+                              eSIM
+                              <span>→</span>
                             </button>
                           )}
 
-                          <div className="mt-6 border-t border-white/10 pt-5">
-                            <div className="mb-4 text-sm font-semibold">
-                              Ручная установка
+                          <details className="roam-card-soft mt-4 overflow-hidden">
+                            <summary className="cursor-pointer list-none p-5 text-sm font-bold">
+                              <div className="flex items-center justify-between">
+                                <span>
+                                  Ручная
+                                  установка
+                                </span>
+
+                                <span className="text-cyan-100">
+                                  +
+                                </span>
+                              </div>
+                            </summary>
+
+                            <div className="border-t border-white/8 px-5 pb-5 pt-4">
+                              {esim.smdp_address && (
+                                <div className="mb-4">
+                                  <div className="text-[10px] uppercase tracking-[0.15em] text-white/28">
+                                    SM-DP+
+                                  </div>
+
+                                  <div className="mt-2 break-all text-xs leading-5 text-white/65">
+                                    {
+                                      esim.smdp_address
+                                    }
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopy(
+                                        `${esim.id}-smdp`,
+                                        esim.smdp_address!
+                                      )
+                                    }
+                                    className="mt-2 text-xs font-bold text-cyan-100"
+                                  >
+                                    {copied ===
+                                    `${esim.id}-smdp`
+                                      ? "Скопировано ✓"
+                                      : "Скопировать"}
+                                  </button>
+                                </div>
+                              )}
+
+                              {esim.activation_code && (
+                                <div className="mb-4 border-t border-white/8 pt-4">
+                                  <div className="text-[10px] uppercase tracking-[0.15em] text-white/28">
+                                    Код
+                                    активации
+                                  </div>
+
+                                  <div className="mt-2 break-all text-xs leading-5 text-white/65">
+                                    {
+                                      esim.activation_code
+                                    }
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopy(
+                                        `${esim.id}-activation`,
+                                        esim.activation_code!
+                                      )
+                                    }
+                                    className="mt-2 text-xs font-bold text-cyan-100"
+                                  >
+                                    {copied ===
+                                    `${esim.id}-activation`
+                                      ? "Скопировано ✓"
+                                      : "Скопировать"}
+                                  </button>
+                                </div>
+                              )}
+
+                              {lpa && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleCopy(
+                                      `${esim.id}-lpa`,
+                                      lpa
+                                    )
+                                  }
+                                  className="roam-secondary mt-2 min-h-[48px]"
+                                >
+                                  {copied ===
+                                  `${esim.id}-lpa`
+                                    ? "Данные скопированы ✓"
+                                    : "Скопировать данные установки"}
+                                </button>
+                              )}
                             </div>
-
-                            {esim.smdp_address && (
-                              <div className="mb-4 rounded-2xl bg-white/[0.05] p-4">
-                                <div className="text-xs text-white/35">
-                                  SM-DP+
-                                </div>
-
-                                <div className="mt-2 break-all text-sm">
-                                  {
-                                    esim.smdp_address
-                                  }
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleCopy(
-                                      `${esim.id}-smdp`,
-                                      esim.smdp_address!
-                                    )
-                                  }
-                                  className="mt-3 text-sm font-semibold text-white/70"
-                                >
-                                  {copied ===
-                                  `${esim.id}-smdp`
-                                    ? "Скопировано ✓"
-                                    : "Скопировать"}
-                                </button>
-                              </div>
-                            )}
-
-                            {esim.activation_code && (
-                              <div className="mb-4 rounded-2xl bg-white/[0.05] p-4">
-                                <div className="text-xs text-white/35">
-                                  Код активации
-                                </div>
-
-                                <div className="mt-2 break-all text-sm">
-                                  {
-                                    esim.activation_code
-                                  }
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleCopy(
-                                      `${esim.id}-activation`,
-                                      esim.activation_code!
-                                    )
-                                  }
-                                  className="mt-3 text-sm font-semibold text-white/70"
-                                >
-                                  {copied ===
-                                  `${esim.id}-activation`
-                                    ? "Скопировано ✓"
-                                    : "Скопировать"}
-                                </button>
-                              </div>
-                            )}
-
-                            {lpa && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleCopy(
-                                    `${esim.id}-lpa`,
-                                    lpa
-                                  )
-                                }
-                                className="flex h-12 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-sm font-semibold"
-                              >
-                                {copied ===
-                                `${esim.id}-lpa`
-                                  ? "Строка установки скопирована ✓"
-                                  : "Скопировать данные установки"}
-                              </button>
-                            )}
-                          </div>
+                          </details>
 
                           {esim.iccid && (
-                            <div className="mt-5 border-t border-white/10 pt-5">
-                              <div className="text-xs text-white/35">
+                            <div className="mt-4 px-1">
+                              <div className="text-[10px] uppercase tracking-[0.15em] text-white/24">
                                 ICCID
                               </div>
 
-                              <div className="mt-1 break-all text-xs text-white/55">
-                                {
-                                  esim.iccid
-                                }
+                              <div className="mt-1 break-all text-[10px] leading-5 text-white/35">
+                                {esim.iccid}
                               </div>
                             </div>
                           )}
@@ -736,18 +780,7 @@ export default function MyEsimsPage() {
           </div>
         )}
 
-        <nav className="fixed bottom-5 left-1/2 z-20 flex w-[calc(100%-40px)] max-w-sm -translate-x-1/2 rounded-3xl border border-white/10 bg-[#151515]/95 p-2 backdrop-blur-xl">
-          <Link
-            href="/"
-            className="flex h-12 flex-1 items-center justify-center rounded-2xl text-sm text-white/45"
-          >
-            🌍 eSIM
-          </Link>
-
-          <div className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white text-sm font-semibold text-black">
-            📱 Мои eSIM
-          </div>
-        </nav>
+        <BottomNav />
       </div>
     </main>
   );

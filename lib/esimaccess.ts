@@ -273,7 +273,7 @@ export async function queryEsimByOrderNo(
 ) {
   const response =
     await fetch(
-      `${ESIM_ACCESS_API}/esim/list`,
+      `${ESIM_ACCESS_API}/esim/query`,
       {
         method: "POST",
 

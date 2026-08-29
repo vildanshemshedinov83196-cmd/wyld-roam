@@ -1,4 +1,4 @@
-"use client";
+k"use client";
 
 import {
   Suspense,
@@ -35,25 +35,18 @@ function statusLabel(
   switch (status) {
     case "pending_payment":
       return "Ожидает оплаты";
-
     case "paid":
       return "Оплачено";
-
     case "ordering_esim":
       return "Выпускаем eSIM";
-
     case "esim_ready":
       return "eSIM готова";
-
     case "failed":
       return "Ошибка";
-
     case "refunded":
       return "Возврат";
-
     case "cancelled":
       return "Отменён";
-
     default:
       return status;
   }
@@ -132,9 +125,9 @@ function PaymentContent() {
   const [
     starsAmount,
     setStarsAmount,
-  ] = useState<
-    number | null
-  >(null);
+  ] = useState<number | null>(
+    null
+  );
 
   useEffect(() => {
     const webApp =
@@ -272,11 +265,6 @@ function PaymentContent() {
         result.starsAmount
       );
 
-      /*
-       * Telegram WebApp SDK.
-       * Открываем invoice прямо
-       * внутри Mini App.
-       */
       const openInvoice =
         (
           webApp as unknown as {
@@ -300,25 +288,10 @@ function PaymentContent() {
         async (
           status
         ) => {
-          /*
-           * status может быть:
-           * paid
-           * cancelled
-           * failed
-           * pending
-           */
           if (
             status ===
             "paid"
           ) {
-            /*
-             * successful_payment
-             * всё равно приходит
-             * через webhook.
-             *
-             * Здесь просто ждём
-             * и перечитываем заказ.
-             */
             await waitForPaid();
           }
 
@@ -346,6 +319,36 @@ function PaymentContent() {
 
       setPaying(false);
     }
+  }
+
+  function openStarsTopUp() {
+    const webApp =
+      getTelegramWebApp();
+
+    const url =
+      "https://t.me/PremiumBot";
+
+    if (webApp) {
+      const openTelegramLink =
+        (
+          webApp as unknown as {
+            openTelegramLink?: (
+              url: string
+            ) => void;
+          }
+        ).openTelegramLink;
+
+      if (openTelegramLink) {
+        openTelegramLink(
+          url
+        );
+
+        return;
+      }
+    }
+
+    window.location.href =
+      url;
   }
 
   async function waitForPaid() {
@@ -392,13 +395,10 @@ function PaymentContent() {
           );
 
           if (
-            result.order
-              .status !==
+            result.order.status !==
             "pending_payment"
           ) {
-            setPaying(
-              false
-            );
+            setPaying(false);
             return;
           }
         }
@@ -429,8 +429,7 @@ function PaymentContent() {
       <main className="flex min-h-screen items-center justify-center bg-[#050505] px-6 text-white">
         <div className="max-w-sm text-center">
           <div className="text-2xl font-semibold">
-            Не удалось открыть
-            заказ
+            Не удалось открыть заказ
           </div>
 
           <div className="mt-4 text-sm leading-6 text-white/40">
@@ -462,8 +461,7 @@ function PaymentContent() {
           </h1>
 
           <p className="mt-3 text-sm leading-6 text-white/40">
-            Заказ создан и
-            сохранён
+            Заказ создан и сохранён
           </p>
         </header>
 
@@ -583,8 +581,7 @@ function PaymentContent() {
                   </div>
 
                   <div className="mt-1 text-xs text-white/35">
-                    Оплата внутри
-                    Telegram
+                    Оплата внутри Telegram
                   </div>
                 </div>
 
@@ -616,6 +613,22 @@ function PaymentContent() {
                   ? `Оплатить · ${starsAmount} ⭐`
                   : "Оплатить ⭐"}
             </button>
+
+            <button
+              type="button"
+              onClick={
+                openStarsTopUp
+              }
+              className="mt-3 flex h-14 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] px-5 text-base font-semibold text-white transition active:scale-[0.98]"
+            >
+              ⭐ Купить Stars
+            </button>
+
+            <p className="mt-3 px-5 text-center text-[11px] leading-5 text-white/30">
+              Откроется официальный
+              бот Telegram для
+              покупки Stars.
+            </p>
 
             <p className="mt-4 px-5 text-center text-[11px] leading-5 text-white/25">
               eSIM будет выпущена

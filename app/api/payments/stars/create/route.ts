@@ -1,29 +1,26 @@
-import {
-  verifyTelegramInitData,
-} from "@/lib/telegram-auth";
+import { NextRequest, NextResponse } from "next/server";
 
-import {
-  getSupabaseAdmin,
-} from "@/lib/supabase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { verifyTelegramInitData } from "@/lib/telegram-auth";
 
-type CreateStarsPaymentBody = {
-  orderId?: string;
-};
-
-function usdToStars(
-  amount: number
-) {
+function usdToStars(amount: number) {
   /*
-   * Временная внутренняя шкала:
-   * $0.99 ≈ 100 Stars.
+   * Временная логика WYLD ROAM:
    *
-   * Позже вынесем это
-   * в отдельную настройку.
+   * 100 Stars ≈ $3 для клиента
+   * $1 ≈ 33.33 Stars
+   *
+   * Примеры:
+   * $0.99  -> 33 Stars
+   * $1.99  -> 66 Stars
+   * $2.99  -> 100 Stars
+   * $6.99  -> 233 Stars
+   * $9.99  -> 333 Stars
    */
-  const stars =
-    Math.ceil(
-      (amount / 0.99) * 100
-    );
+
+  const stars = Math.round(
+    (amount / 3) * 100
+  );
 
   return Math.max(
     stars,
@@ -31,22 +28,87 @@ function usdToStars(
   );
 }
 
+async function createTelegramInvoiceLink(params: {
+  title: string;
+  description: string;
+  payload: string;
+  starsAmount: number;
+}) {
+  const botToken =
+    process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!botToken) {
+    throw new Error(
+      "TELEGRAM_BOT_TOKEN is not configured"
+    );
+  }
+
+  const response = await fetch(
+    `https://api.telegram.org/bot${botToken}/createInvoiceLink`,
+    {
+      method: "POST",
+
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+
+      body: JSON.stringify({
+        title: params.title,
+        description:
+          params.description,
+
+        payload:
+          params.payload,
+
+        currency: "XTR",
+
+        prices: [
+          {
+            label:
+              params.title,
+
+            amount:
+              params.starsAmount,
+          },
+        ],
+      }),
+    }
+  );
+
+  const result =
+    await response.json();
+
+  if (
+    !response.ok ||
+    !result.ok ||
+    !result.result
+  ) {
+    console.error(
+      "Telegram createInvoiceLink error:",
+      result
+    );
+
+    throw new Error(
+      result.description ??
+        "Не удалось создать Telegram Stars invoice"
+    );
+  }
+
+  return result.result as string;
+}
+
 export async function POST(
-  request: Request
+  request: NextRequest
 ) {
   try {
     const initData =
       request.headers.get(
         "x-telegram-init-data"
-      ) ?? "";
-
-    const telegramUser =
-      verifyTelegramInitData(
-        initData
       );
 
-    if (!telegramUser) {
-      return Response.json(
+    if (!initData) {
+      return NextResponse.json(
         {
           success: false,
           error:
@@ -58,14 +120,34 @@ export async function POST(
       );
     }
 
+    const telegramUser =
+      verifyTelegramInitData(
+        initData
+      );
+
+    if (!telegramUser) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Invalid Telegram authorization",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
     const body =
-      (await request.json()) as CreateStarsPaymentBody;
+      await request.json();
 
     const orderId =
-      body.orderId?.trim();
+      String(
+        body?.orderId ?? ""
+      ).trim();
 
     if (!orderId) {
-      return Response.json(
+      return NextResponse.json(
         {
           success: false,
           error:
@@ -77,30 +159,9 @@ export async function POST(
       );
     }
 
-    const botToken =
-      process.env
-        .TELEGRAM_BOT_TOKEN;
-
-    if (!botToken) {
-      return Response.json(
-        {
-          success: false,
-          error:
-            "Telegram bot is not configured",
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
     const supabase =
       getSupabaseAdmin();
 
-    /*
-     * Находим пользователя WYLD ROAM
-     * по подтверждённому Telegram ID.
-     */
     const {
       data: roamUser,
       error: userError,
@@ -113,18 +174,18 @@ export async function POST(
         "telegram_user_id",
         telegramUser.id
       )
-      .single();
+      .maybeSingle();
 
     if (
       userError ||
       !roamUser
     ) {
       console.error(
-        "WYLD ROAM user lookup error:",
+        "ROAM user lookup error:",
         userError
       );
 
-      return Response.json(
+      return NextResponse.json(
         {
           success: false,
           error:
@@ -136,26 +197,14 @@ export async function POST(
       );
     }
 
-    /*
-     * Получаем только заказ
-     * этого Telegram-пользователя.
-     */
-    const {
-      data: order,
-      error: orderError,
-    } = await supabase
-      .from("roam_orders")
-      .select(
-        `
-        id,
-        user_id,
-        plan_name,
-        data_label,
-        amount,
-        currency,
-        status
-        `
-      )
+const {
+  data: order,
+  error: orderError,
+} = await supabase
+  .from("roam_orders")
+  .select(
+    "id, user_id, status, plan_name, data_label, amount, currency"
+  )
       .eq(
         "id",
         orderId
@@ -164,22 +213,22 @@ export async function POST(
         "user_id",
         roamUser.id
       )
-      .single();
+      .maybeSingle();
 
     if (
       orderError ||
       !order
     ) {
       console.error(
-        "Order lookup error:",
+        "ROAM order lookup error:",
         orderError
       );
 
-      return Response.json(
+      return NextResponse.json(
         {
           success: false,
           error:
-            "Order not found",
+            "Заказ не найден",
         },
         {
           status: 404,
@@ -191,11 +240,11 @@ export async function POST(
       order.status !==
       "pending_payment"
     ) {
-      return Response.json(
+      return NextResponse.json(
         {
           success: false,
           error:
-            "Order is not awaiting payment",
+            "Этот заказ уже нельзя оплатить",
         },
         {
           status: 409,
@@ -214,14 +263,14 @@ export async function POST(
       ) ||
       amount <= 0
     ) {
-      return Response.json(
+      return NextResponse.json(
         {
           success: false,
           error:
-            "Invalid order amount",
+            "Некорректная стоимость заказа",
         },
         {
-          status: 500,
+          status: 400,
         }
       );
     }
@@ -231,85 +280,48 @@ export async function POST(
         amount
       );
 
-    /*
-     * Payload Telegram вернёт нам
-     * обратно в платёжных событиях.
-     */
     const payload =
       `wyld_roam:${order.id}`;
 
-    /*
-     * Создаём Telegram Stars invoice.
-     *
-     * Для Stars используется XTR.
-     * provider_token не нужен.
-     */
-    const telegramResponse =
-      await fetch(
-        `https://api.telegram.org/bot${botToken}/createInvoiceLink`,
+    const title =
+      String(
+        order.plan_name ||
+          "WYLD ROAM eSIM"
+      ).slice(
+        0,
+        32
+      );
+
+    const description =
+      [
+        order.data_label
+          ? `${order.data_label}`
+          : null,
+
+        `WYLD ROAM eSIM`,
+
+        `Заказ ${order.id.slice(
+          0,
+          8
+        )}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+        .slice(
+          0,
+          255
+        );
+
+    const invoiceUrl =
+      await createTelegramInvoiceLink(
         {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body:
-            JSON.stringify({
-              title:
-                order.plan_name ||
-                "WYLD ROAM eSIM",
-
-              description:
-                `${order.data_label ?? "eSIM"} · WYLD ROAM`,
-
-              payload,
-
-              currency:
-                "XTR",
-
-              prices: [
-                {
-                  label:
-                    "WYLD ROAM eSIM",
-
-                  amount:
-                    starsAmount,
-                },
-              ],
-            }),
+          title,
+          description,
+          payload,
+          starsAmount,
         }
       );
 
-    const telegramData =
-      await telegramResponse.json();
-
-    if (
-      !telegramResponse.ok ||
-      !telegramData.ok ||
-      !telegramData.result
-    ) {
-      console.error(
-        "Telegram createInvoiceLink error:",
-        telegramData
-      );
-
-      return Response.json(
-        {
-          success: false,
-          error:
-            "Failed to create Telegram Stars invoice",
-        },
-        {
-          status: 502,
-        }
-      );
-    }
-
-    /*
-     * Сохраняем pending-платёж.
-     */
     const {
       data: payment,
       error:
@@ -346,15 +358,15 @@ export async function POST(
       !payment
     ) {
       console.error(
-        "Create payment error:",
+        "ROAM payment insert error:",
         paymentError
       );
 
-      return Response.json(
+      return NextResponse.json(
         {
           success: false,
           error:
-            "Failed to save payment",
+            "Не удалось создать запись платежа",
         },
         {
           status: 500,
@@ -362,34 +374,32 @@ export async function POST(
       );
     }
 
-    /*
-     * Клиент получает только:
-     * - ID внутреннего платежа
-     * - количество Stars
-     * - ссылку Telegram invoice
-     */
-    return Response.json({
-      success: true,
+    return NextResponse.json(
+      {
+        success: true,
 
-      paymentId:
-        payment.id,
+        paymentId:
+          payment.id,
 
-      starsAmount,
+        starsAmount,
 
-      invoiceUrl:
-        telegramData.result,
-    });
+        invoiceUrl,
+      }
+    );
   } catch (error) {
     console.error(
-      "Stars create payment error:",
+      "Create Stars payment error:",
       error
     );
 
-    return Response.json(
+    return NextResponse.json(
       {
         success: false,
+
         error:
-          "Failed to create Stars payment",
+          error instanceof Error
+            ? error.message
+            : "Не удалось создать оплату Stars",
       },
       {
         status: 500,

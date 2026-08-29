@@ -17,6 +17,9 @@ type EsimAccessOrderResponse = {
   };
 };
 
+const ESIM_ACCESS_API =
+  "https://api.esimaccess.com/api/v1/open";
+
 function getHeaders() {
   const accessCode =
     process.env.ESIM_ACCESS_CODE;
@@ -36,10 +39,46 @@ function getHeaders() {
   };
 }
 
+/*
+ * eSIMAccess хранит денежные значения
+ * в единицах 1 / 10000 USD.
+ *
+ * Например:
+ *
+ * 500000 = $50.00
+ * 110000 = $11.00
+ * 1310000 = $131.00
+ * 5000000 = $500.00
+ */
+function moneyFromEsimAccess(
+  value: number
+) {
+  return (
+    Number(value || 0) /
+    10000
+  );
+}
+
+/*
+ * Обратное преобразование:
+ *
+ * $0.30 -> 3000
+ * $1.19 -> 11900
+ * $50.00 -> 500000
+ */
+function moneyToEsimAccess(
+  value: number
+) {
+  return Math.round(
+    Number(value || 0) *
+      10000
+  );
+}
+
 export async function getEsimAccessBalance() {
   const response =
     await fetch(
-      "https://api.esimaccess.com/api/v1/open/balance/query",
+      `${ESIM_ACCESS_API}/balance/query`,
       {
         method: "POST",
 
@@ -62,25 +101,65 @@ export async function getEsimAccessBalance() {
     !response.ok ||
     !result.success
   ) {
+    console.error(
+      "eSIMAccess balance error:",
+      result
+    );
+
     throw new Error(
       result.errorMsg ||
         "Не удалось получить баланс eSIMAccess"
     );
   }
 
-  return Number(
-    result.obj?.balance ?? 0
+  const rawBalance =
+    Number(
+      result.obj?.balance ??
+        0
+    );
+
+  return moneyFromEsimAccess(
+    rawBalance
   );
 }
 
 export async function orderEsim(params: {
   transactionId: string;
   packageCode: string;
-  supplierPriceRaw: number;
+  supplierPriceRaw?: number;
+  supplierCost?: number;
 }) {
+  let supplierPriceRaw =
+    params.supplierPriceRaw;
+
+  if (
+    supplierPriceRaw ===
+      undefined &&
+    params.supplierCost !==
+      undefined
+  ) {
+    supplierPriceRaw =
+      moneyToEsimAccess(
+        params.supplierCost
+      );
+  }
+
+  if (
+    supplierPriceRaw ===
+      undefined ||
+    !Number.isFinite(
+      supplierPriceRaw
+    ) ||
+    supplierPriceRaw <= 0
+  ) {
+    throw new Error(
+      "Некорректная стоимость eSIM"
+    );
+  }
+
   const response =
     await fetch(
-      "https://api.esimaccess.com/api/v1/open/esim/order",
+      `${ESIM_ACCESS_API}/esim/order`,
       {
         method: "POST",
 
@@ -93,7 +172,7 @@ export async function orderEsim(params: {
               params.transactionId,
 
             amount:
-              params.supplierPriceRaw,
+              supplierPriceRaw,
 
             packageInfoList: [
               {
@@ -103,10 +182,13 @@ export async function orderEsim(params: {
                 count: 1,
 
                 price:
-                  params.supplierPriceRaw,
+                  supplierPriceRaw,
               },
             ],
           }),
+
+        cache:
+          "no-store",
       }
     );
 
@@ -118,6 +200,11 @@ export async function orderEsim(params: {
     !response.ok ||
     !result.success
   ) {
+    console.error(
+      "eSIMAccess order error:",
+      result
+    );
+
     throw new Error(
       result.errorMsg ||
         "eSIMAccess не смог создать заказ"

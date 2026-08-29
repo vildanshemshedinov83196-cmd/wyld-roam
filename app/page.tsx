@@ -1,69 +1,126 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+
+type Location = {
+  code: string;
+  name: string;
+  type: number;
+  continent: string | null;
+  subLocations: Location[];
+};
 
 export default function Home() {
+  const router = useRouter();
+
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    async function loadLocations() {
+      try {
+        const response = await fetch("/api/locations");
+        const data = await response.json();
+
+        if (data.success) {
+          setLocations(data.locations ?? []);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadLocations();
+  }, []);
+
+  const filteredLocations = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+      return locations;
+    }
+
+    return locations.filter((location) => {
+      return (
+        location.name.toLowerCase().includes(query) ||
+        location.code.toLowerCase().includes(query) ||
+        location.continent?.toLowerCase().includes(query)
+      );
+    });
+  }, [locations, search]);
+
+  function openLocation(code: string) {
+    router.push(`/plans/${code}`);
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <main className="min-h-screen bg-[#050505] text-white">
+      <div className="mx-auto min-h-screen max-w-md px-5 pb-12 pt-8">
+        <header className="mb-8">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.35em] text-white/40">
+            WYLD ROAM
+          </div>
+
+          <h1 className="text-4xl font-semibold leading-tight">
+            Интернет
+            <br />
+            без границ.
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+
+          <p className="mt-4 max-w-sm text-sm leading-6 text-white/55">
+            Выберите страну и подключите eSIM за несколько минут.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+        </header>
+
+        <div className="sticky top-0 z-10 -mx-5 mb-6 bg-[#050505]/95 px-5 pb-4 pt-2 backdrop-blur">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.06] px-4">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Поиск страны"
+              className="h-14 w-full bg-transparent text-base text-white outline-none placeholder:text-white/30"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
         </div>
-      </main>
-    </div>
+
+        {loading ? (
+          <div className="py-12 text-center text-sm text-white/40">
+            Загружаем направления...
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredLocations.map((location) => (
+              <button
+                key={location.code}
+                onClick={() => openLocation(location.code)}
+                className="flex w-full items-center justify-between rounded-3xl border border-white/10 bg-white/[0.05] px-5 py-5 text-left transition active:scale-[0.98]"
+              >
+                <div>
+                  <div className="text-lg font-medium">
+                    {location.name}
+                  </div>
+
+                  <div className="mt-1 text-xs uppercase tracking-wider text-white/35">
+                    {location.continent ?? "Global"}
+                  </div>
+                </div>
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-lg text-black">
+                  →
+                </div>
+              </button>
+            ))}
+
+            {filteredLocations.length === 0 && (
+              <div className="py-12 text-center text-sm text-white/40">
+                Ничего не найдено
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </main>
   );
 }

@@ -6,64 +6,9 @@ import {
   getSupabaseAdmin,
 } from "@/lib/supabase-admin";
 
-async function getSupplierBalance() {
-  const accessCode =
-    process.env.ESIM_ACCESS_CODE;
-
-  if (!accessCode) {
-    return null;
-  }
-
-  try {
-    const response =
-      await fetch(
-        "https://api.esimaccess.com/api/v1/open/balance/query",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-
-            "RT-AccessCode":
-              accessCode,
-          },
-
-          body:
-            JSON.stringify({}),
-
-          cache:
-            "no-store",
-        }
-      );
-
-    const result =
-      await response.json();
-
-    if (
-      !response.ok ||
-      !result.success
-    ) {
-      console.error(
-        "eSIMAccess balance error:",
-        result
-      );
-
-      return null;
-    }
-
-    return Number(
-      result.obj?.balance ?? 0
-    );
-  } catch (error) {
-    console.error(
-      "Supplier balance request error:",
-      error
-    );
-
-    return null;
-  }
-}
+import {
+  getEsimAccessBalance,
+} from "@/lib/esimaccess";
 
 export async function GET(
   request: Request
@@ -100,9 +45,7 @@ export async function GET(
       error: userError,
     } = await supabase
       .from("roam_users")
-      .select(
-        "id, role"
-      )
+      .select("id, role")
       .eq(
         "telegram_user_id",
         telegramUser.id
@@ -168,8 +111,7 @@ export async function GET(
       .order(
         "created_at",
         {
-          ascending:
-            false,
+          ascending: false,
         }
       );
 
@@ -179,12 +121,9 @@ export async function GET(
 
     const {
       data: starPayments,
-      error:
-        paymentsError,
+      error: paymentsError,
     } = await supabase
-      .from(
-        "roam_payments"
-      )
+      .from("roam_payments")
       .select(
         `
         id,
@@ -204,9 +143,7 @@ export async function GET(
         "paid"
       );
 
-    if (
-      paymentsError
-    ) {
+    if (paymentsError) {
       throw paymentsError;
     }
 
@@ -283,13 +220,38 @@ export async function GET(
 
       const filtered =
         orders.filter(
-          (
-            order
-          ) =>
+          (order) =>
             new Date(
               order.created_at
             ).getTime() >=
             from
+        );
+
+      const periodRevenue =
+        filtered.reduce(
+          (
+            sum,
+            order
+          ) =>
+            sum +
+            Number(
+              order.amount ?? 0
+            ),
+          0
+        );
+
+      const periodSupplierCost =
+        filtered.reduce(
+          (
+            sum,
+            order
+          ) =>
+            sum +
+            Number(
+              order.supplier_cost ??
+                0
+            ),
+          0
         );
 
       return {
@@ -297,43 +259,40 @@ export async function GET(
           filtered.length,
 
         revenue:
-          filtered.reduce(
-            (
-              sum,
-              order
-            ) =>
-              sum +
-              Number(
-                order.amount ??
-                  0
-              ),
-            0
-          ),
+          periodRevenue,
+
+        supplierCost:
+          periodSupplierCost,
 
         profit:
-          filtered.reduce(
-            (
-              sum,
-              order
-            ) =>
-              sum +
-              (
-                Number(
-                  order.amount ??
-                    0
-                ) -
-                Number(
-                  order.supplier_cost ??
-                    0
-                )
-              ),
-            0
-          ),
+          periodRevenue -
+          periodSupplierCost,
       };
     }
 
-    const supplierBalance =
-      await getSupplierBalance();
+    /*
+     * ВАЖНО:
+     *
+     * getEsimAccessBalance()
+     * уже преобразует внутреннее
+     * значение eSIMAccess:
+     *
+     * 500000  -> $50
+     * 110000  -> $11
+     * 1310000 -> $131
+     */
+    let supplierBalance:
+      number | null = null;
+
+    try {
+      supplierBalance =
+        await getEsimAccessBalance();
+    } catch (error) {
+      console.error(
+        "Failed to get eSIMAccess balance:",
+        error
+      );
+    }
 
     return Response.json({
       success: true,
@@ -352,68 +311,58 @@ export async function GET(
         supplierBalance,
 
         today:
-          periodStats(
-            1
-          ),
+          periodStats(1),
 
         sevenDays:
-          periodStats(
-            7
-          ),
+          periodStats(7),
 
         thirtyDays:
-          periodStats(
-            30
-          ),
+          periodStats(30),
       },
 
       recentSales:
         orders
-          .slice(
-            0,
-            15
-          )
+          .slice(0, 15)
           .map(
-            (
-              order
-            ) => ({
-              id:
-                order.id,
-
-              country:
-                order.country_code,
-
-              planName:
-                order.plan_name,
-
-              amount:
+            (order) => {
+              const amount =
                 Number(
                   order.amount ??
                     0
-                ),
+                );
 
-              supplierCost:
+              const cost =
                 Number(
                   order.supplier_cost ??
                     0
-                ),
+                );
 
-              profit:
-                Number(
-                  order.amount ??
-                    0
-                ) -
-                Number(
-                  order.supplier_cost ??
-                    0
-                ),
+              return {
+                id:
+                  order.id,
 
-              status:
-                order.status,
+                country:
+                  order.country_code,
 
-              createdAt:
-                order.created_at,
-            })
+                planName:
+                  order.plan_name,
+
+                amount,
+
+                supplierCost:
+                  cost,
+
+                profit:
+                  amount -
+                  cost,
+
+                status:
+                  order.status,
+
+                createdAt:
+                  order.created_at,
+              };
+            }
           ),
     });
   } catch (error) {

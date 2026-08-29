@@ -42,16 +42,15 @@ export default function Home() {
     setSearch,
   ] = useState("");
 
+  const [
+    isOwner,
+    setIsOwner,
+  ] = useState(false);
+
   /*
-   * 1. При открытии WYLD ROAM
-   * внутри Telegram:
-   *
-   * - активируем Mini App
-   * - разворачиваем его
-   * - отправляем подписанный initData
-   *   на наш сервер
-   * - сервер создаёт/обновляет
-   *   пользователя в roam_users
+   * 1. Регистрируем Telegram-пользователя
+   * и одновременно проверяем,
+   * является ли он owner.
    */
   useEffect(() => {
     async function registerTelegramUser() {
@@ -72,7 +71,7 @@ export default function Home() {
         webApp.ready();
         webApp.expand();
 
-        const response =
+        const sessionResponse =
           await fetch(
             "/api/telegram/session",
             {
@@ -86,17 +85,46 @@ export default function Home() {
             }
           );
 
-        const result =
-          await response.json();
+        const sessionResult =
+          await sessionResponse.json();
 
         if (
-          !response.ok ||
-          !result.success
+          !sessionResponse.ok ||
+          !sessionResult.success
         ) {
           console.error(
             "Telegram session error:",
-            result
+            sessionResult
           );
+        }
+
+        /*
+         * После регистрации
+         * узнаём роль пользователя.
+         */
+        const meResponse =
+          await fetch(
+            "/api/me",
+            {
+              headers: {
+                "x-telegram-init-data":
+                  initData,
+              },
+
+              cache:
+                "no-store",
+            }
+          );
+
+        const meResult =
+          await meResponse.json();
+
+        if (
+          meResponse.ok &&
+          meResult.success &&
+          meResult.isOwner === true
+        ) {
+          setIsOwner(true);
         }
       } catch (error) {
         console.error(
@@ -110,8 +138,7 @@ export default function Home() {
   }, []);
 
   /*
-   * 2. Загружаем список стран
-   * через наш серверный API.
+   * 2. Загружаем список стран.
    */
   useEffect(() => {
     async function loadLocations() {
@@ -149,13 +176,6 @@ export default function Home() {
     loadLocations();
   }, []);
 
-  /*
-   * Оставляем только страны.
-   *
-   * eSIMAccess может возвращать
-   * также регионы и вложенные
-   * локации.
-   */
   const countryLocations =
     useMemo(() => {
       return locations.filter(
@@ -169,10 +189,6 @@ export default function Home() {
       );
     }, [locations]);
 
-  /*
-   * Поиск по названию страны
-   * или её коду.
-   */
   const filteredLocations =
     useMemo(() => {
       const query =
@@ -334,6 +350,20 @@ export default function Home() {
           >
             📱 Мои eSIM
           </button>
+
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  "/admin"
+                )
+              }
+              className="flex h-12 flex-1 items-center justify-center rounded-2xl text-sm text-white/50"
+            >
+              📊 Статистика
+            </button>
+          )}
         </nav>
       </div>
     </main>

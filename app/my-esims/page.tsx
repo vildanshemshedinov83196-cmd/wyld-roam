@@ -19,20 +19,24 @@ type Esim = {
   country_code: string;
   iccid: string | null;
   qr_code: string | null;
-  activation_code:
-    | string
-    | null;
-  smdp_address:
-    | string
-    | null;
+  activation_code: string | null;
+  smdp_address: string | null;
   status: string;
   remaining_data_bytes:
     | number
     | null;
-  expires_at:
-    | string
-    | null;
+  expires_at: string | null;
 };
+
+/*
+ * Уже оплаченный настоящий заказ.
+ * Russia — 100MB / 7 Days.
+ *
+ * После успешного живого теста
+ * этот временный механизм удалим.
+ */
+const LIVE_TEST_ORDER_ID =
+  "e89032c3-9c9d-4006-9597-25ab41f4e3e1";
 
 function statusLabel(
   status: string
@@ -71,8 +75,20 @@ export default function MyEsimsPage() {
   const [loading, setLoading] =
     useState(true);
 
-  const [telegramMode, setTelegramMode] =
-    useState(false);
+  const [
+    telegramMode,
+    setTelegramMode,
+  ] = useState(false);
+
+  const [
+    issuing,
+    setIssuing,
+  ] = useState(false);
+
+  const [
+    issueMessage,
+    setIssueMessage,
+  ] = useState("");
 
   useEffect(() => {
     const webApp =
@@ -91,7 +107,7 @@ export default function MyEsimsPage() {
       webApp.expand();
     }
 
-    async function load() {
+    async function loadEsims() {
       if (!initData) {
         setLoading(false);
         return;
@@ -115,17 +131,175 @@ export default function MyEsimsPage() {
         const data =
           await response.json();
 
-        if (data.success) {
+        if (
+          data.success
+        ) {
           setEsims(
             data.esims ?? []
           );
+
+          return (
+            data.esims ?? []
+          ) as Esim[];
         }
+      } catch (
+        error
+      ) {
+        console.error(
+          "Load eSIMs error:",
+          error
+        );
       } finally {
         setLoading(false);
       }
+
+      return [];
     }
 
-    load();
+    async function run() {
+      const currentEsims =
+        (await loadEsims()) ?? [];
+
+      if (!initData) {
+        return;
+      }
+
+      /*
+       * Если эта eSIM уже появилась,
+       * повторный запуск не нужен.
+       */
+      const alreadyExists =
+        currentEsims.some(
+          (esim) =>
+            esim.order_id ===
+            LIVE_TEST_ORDER_ID
+        );
+
+      if (
+        alreadyExists
+      ) {
+        return;
+      }
+
+      /*
+       * Дополнительная защита браузера
+       * от нескольких одновременных
+       * вызовов при повторном render.
+       *
+       * Сервер всё равно остаётся
+       * главным idempotency-контролем.
+       */
+      const storageKey =
+        `wyld-live-issue-${LIVE_TEST_ORDER_ID}`;
+
+      if (
+        sessionStorage.getItem(
+          storageKey
+        ) === "running"
+      ) {
+        return;
+      }
+
+      sessionStorage.setItem(
+        storageKey,
+        "running"
+      );
+
+      setIssuing(true);
+      setIssueMessage(
+        "Выпускаем вашу eSIM..."
+      );
+
+      try {
+        const response =
+          await fetch(
+            "/api/esim/issue",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                "x-telegram-init-data":
+                  initData,
+              },
+
+              body:
+                JSON.stringify({
+                  orderId:
+                    LIVE_TEST_ORDER_ID,
+                }),
+            }
+          );
+
+        const data =
+          await response.json();
+
+        console.log(
+          "Live eSIM issue:",
+          data
+        );
+
+        if (
+          data.success &&
+          data.ready
+        ) {
+          setIssueMessage(
+            "eSIM готова"
+          );
+        } else if (
+          data.success &&
+          data.alreadyReady
+        ) {
+          setIssueMessage(
+            "eSIM уже готова"
+          );
+        } else if (
+          data.success &&
+          data.pending
+        ) {
+          setIssueMessage(
+            "eSIM куплена. Поставщик подготавливает профиль..."
+          );
+        } else {
+          sessionStorage.removeItem(
+            storageKey
+          );
+
+          setIssueMessage(
+            data.error ??
+              "Не удалось выпустить eSIM"
+          );
+        }
+
+        /*
+         * Перечитываем список.
+         * Даже pending-запись уже должна
+         * появиться в «Мои eSIM».
+         */
+        await loadEsims();
+      } catch (
+        error
+      ) {
+        console.error(
+          "Issue eSIM error:",
+          error
+        );
+
+        sessionStorage.removeItem(
+          storageKey
+        );
+
+        setIssueMessage(
+          "Ошибка соединения при выпуске eSIM"
+        );
+      } finally {
+        setIssuing(false);
+      }
+    }
+
+    run();
   }, []);
 
   return (
@@ -141,10 +315,29 @@ export default function MyEsimsPage() {
           </h1>
 
           <p className="mt-3 text-sm text-white/45">
-            Ваши подключённые
-            eSIM и их статус
+            Ваши подключённые eSIM
+            и их статус
           </p>
         </header>
+
+        {issuing && (
+          <div className="mb-5 rounded-3xl border border-white/10 bg-white/[0.07] p-5">
+            <div className="text-sm font-semibold">
+              Подготовка eSIM
+            </div>
+
+            <div className="mt-2 text-sm text-white/45">
+              {issueMessage}
+            </div>
+          </div>
+        )}
+
+        {!issuing &&
+          issueMessage && (
+            <div className="mb-5 rounded-3xl border border-white/10 bg-white/[0.07] p-5 text-sm">
+              {issueMessage}
+            </div>
+          )}
 
         {loading ? (
           <div className="py-16 text-center text-sm text-white/40">
@@ -166,13 +359,15 @@ export default function MyEsimsPage() {
         ) : esims.length === 0 ? (
           <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6">
             <div className="text-xl font-semibold">
-              Пока пусто
+              {issuing
+                ? "Выпускаем eSIM"
+                : "Пока пусто"}
             </div>
 
             <p className="mt-3 text-sm leading-6 text-white/45">
-              После первой покупки
-              ваша eSIM появится
-              здесь автоматически.
+              {issuing
+                ? "Подождите немного. Профиль создаётся у оператора."
+                : "После первой покупки ваша eSIM появится здесь автоматически."}
             </p>
 
             <Link
@@ -227,6 +422,34 @@ export default function MyEsimsPage() {
                       </div>
                     </div>
                   )}
+
+                  {esim.smdp_address && (
+                    <div className="mt-4">
+                      <div className="text-xs text-white/35">
+                        SM-DP+
+                      </div>
+
+                      <div className="mt-1 break-all text-sm">
+                        {
+                          esim.smdp_address
+                        }
+                      </div>
+                    </div>
+                  )}
+
+                  {esim.activation_code && (
+                    <div className="mt-4">
+                      <div className="text-xs text-white/35">
+                        Код активации
+                      </div>
+
+                      <div className="mt-1 break-all text-sm">
+                        {
+                          esim.activation_code
+                        }
+                      </div>
+                    </div>
+                  )}
                 </article>
               )
             )}
@@ -248,4 +471,5 @@ export default function MyEsimsPage() {
       </div>
     </main>
   );
+
 }

@@ -10,11 +10,6 @@ export async function POST(
   request: Request
 ) {
   try {
-    /*
-     * Авторизация через Telegram.
-     * Никакого публичного выпуска eSIM
-     * только по одному orderId.
-     */
     const initData =
       request.headers.get(
         "x-telegram-init-data"
@@ -63,8 +58,11 @@ export async function POST(
       getSupabaseAdmin();
 
     /*
-     * Находим пользователя Telegram.
+     * ============================================
+     * USER
+     * ============================================
      */
+
     const {
       data: user,
       error: userError,
@@ -94,12 +92,11 @@ export async function POST(
     }
 
     /*
-     * Получаем заказ.
-     *
-     * ВАЖНО:
-     * supplier_cost остаётся
-     * исключительно на сервере.
+     * ============================================
+     * ORDER
+     * ============================================
      */
+
     const {
       data: order,
       error: orderError,
@@ -139,12 +136,13 @@ export async function POST(
     }
 
     /*
-     * Клиент может работать
-     * только со своим заказом.
+     * Клиент может выпускать
+     * только свою eSIM.
      *
-     * Owner оставляем возможность
-     * проводить контролируемые тесты.
+     * Owner может проводить
+     * контролируемые тесты.
      */
+
     if (
       order.user_id !==
         user.id &&
@@ -164,14 +162,16 @@ export async function POST(
     }
 
     /*
-     * Проверяем, что Stars
-     * действительно были оплачены.
+     * ============================================
+     * PAYMENT
+     * ============================================
      *
-     * Не доверяем одному только
-     * status заказа.
+     * Проверяем не просто status заказа,
+     * а настоящий paid Stars payment.
      */
+
     const {
-      data: payment,
+      data: payments,
       error: paymentError,
     } = await supabase
       .from("roam_payments")
@@ -195,11 +195,14 @@ export async function POST(
         "status",
         "paid"
       )
-      .maybeSingle();
+      .limit(1);
 
     if (paymentError) {
       throw paymentError;
     }
+
+    const payment =
+      payments?.[0];
 
     if (!payment) {
       return Response.json(
@@ -215,18 +218,21 @@ export async function POST(
     }
 
     /*
-     * Если eSIM для заказа уже существует,
-     * второй экземпляр создавать нельзя.
+     * ============================================
+     * EXISTING ESIM
+     * ============================================
      */
+
     const {
       data: existingEsim,
-      error: esimError,
+      error: existingEsimError,
     } = await supabase
       .from("roam_esims")
       .select(
         `
         id,
         supplier_order_id,
+        iccid,
         status
         `
       )
@@ -236,14 +242,13 @@ export async function POST(
       )
       .maybeSingle();
 
-    if (esimError) {
-      throw esimError;
+    if (existingEsimError) {
+      throw existingEsimError;
     }
 
     if (existingEsim) {
       return Response.json({
         success: true,
-
         alreadyExists: true,
 
         esim: {
@@ -252,43 +257,227 @@ export async function POST(
 
           status:
             existingEsim.status,
+
+          hasSupplierOrder:
+            Boolean(
+              existingEsim
+                .supplier_order_id
+            ),
+
+          hasIccid:
+            Boolean(
+              existingEsim.iccid
+            ),
         },
       });
     }
 
     /*
-     * На данном этапе намеренно
-     * НЕ вызываем eSIMAccess.
-     *
-     * Это dry-run проверка всей
-     * цепочки безопасности.
+     * ============================================
+     * ORDER STATUS
+     * ============================================
      */
+
+    if (
+      order.status !==
+      "paid"
+    ) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            `Order cannot be issued from status: ${order.status}`,
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    /*
+     * ============================================
+     * ATOMIC CLAIM
+     * ============================================
+     *
+     * Самый важный участок.
+     *
+     * Меняем:
+     *
+     * paid -> ordering_esim
+     *
+     * НО только если статус всё ещё paid.
+     *
+     * Если два запроса придут одновременно,
+     * только один сможет получить claimedOrder.
+     */
+
+    const {
+      data: claimedOrder,
+      error: claimError,
+    } = await supabase
+      .from("roam_orders")
+      .update({
+        status:
+          "ordering_esim",
+      })
+      .eq(
+        "id",
+        order.id
+      )
+      .eq(
+        "status",
+        "paid"
+      )
+      .select(
+        `
+        id,
+        user_id,
+        package_code,
+        country_code,
+        supplier_cost,
+        amount,
+        status
+        `
+      )
+      .maybeSingle();
+
+    if (claimError) {
+      throw claimError;
+    }
+
+    /*
+     * Если строка не вернулась,
+     * другой запрос уже забрал заказ.
+     */
+
+    if (!claimedOrder) {
+      return Response.json(
+        {
+          success: false,
+          alreadyClaimed: true,
+          error:
+            "Order is already being processed",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    /*
+     * ============================================
+     * RESERVATION ROW
+     * ============================================
+     *
+     * Создаём roam_esims ДО обращения
+     * к поставщику.
+     *
+     * order_id UNIQUE даёт нам
+     * ещё один уровень защиты.
+     */
+
+    const {
+      data: reservedEsim,
+      error: reserveError,
+    } = await supabase
+      .from("roam_esims")
+      .insert({
+        order_id:
+          claimedOrder.id,
+
+        user_id:
+          claimedOrder.user_id,
+
+        package_code:
+          claimedOrder.package_code,
+
+        country_code:
+          claimedOrder.country_code,
+
+        status:
+          "pending",
+      })
+      .select(
+        "id, status"
+      )
+      .single();
+
+    if (reserveError) {
+      /*
+       * Мы ещё НЕ обращались
+       * к eSIMAccess.
+       *
+       * Поэтому заказ можно
+       * безопасно вернуть в paid.
+       */
+
+      await supabase
+        .from("roam_orders")
+        .update({
+          status:
+            "paid",
+        })
+        .eq(
+          "id",
+          claimedOrder.id
+        )
+        .eq(
+          "status",
+          "ordering_esim"
+        );
+
+      throw reserveError;
+    }
+
+    /*
+     * ============================================
+     * STOP BEFORE REAL PURCHASE
+     * ============================================
+     *
+     * Пока намеренно НЕ вызываем orderEsim().
+     *
+     * Проверяем, что атомарная защита
+     * работает и проект собирается.
+     *
+     * ВАЖНО:
+     * Не вызывай этот endpoint вручную
+     * на реальном paid-заказе на данном
+     * этапе, потому что он изменит статус
+     * заказа на ordering_esim.
+     */
+
     return Response.json({
       success: true,
 
-      dryRun: true,
+      protectedDryRun: true,
 
-      readyToIssue: true,
+      message:
+        "Order safely claimed for eSIM issuance",
 
       order: {
         id:
-          order.id,
+          claimedOrder.id,
 
         status:
-          order.status,
+          claimedOrder.status,
 
         packageCode:
-          order.package_code,
+          claimedOrder.package_code,
 
         countryCode:
-          order.country_code,
+          claimedOrder.country_code,
+      },
+
+      esim: {
+        id:
+          reservedEsim.id,
+
+        status:
+          reservedEsim.status,
       },
 
       payment: {
         confirmed: true,
-
-        provider:
-          payment.provider,
 
         starsAmount:
           Number(
@@ -296,13 +485,10 @@ export async function POST(
               0
           ),
       },
-
-      message:
-        "Order is verified and ready for eSIM issuance",
     });
   } catch (error) {
     console.error(
-      "eSIM issue preparation error:",
+      "Protected eSIM issue error:",
       error
     );
 

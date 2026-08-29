@@ -44,13 +44,9 @@ type TelegramWebApp = {
         | "pending"
     ) => void
   ) => void;
-
-  openTelegramLink?: (
-    url: string
-  ) => void;
 };
 
-function telegram():
+function getTelegram():
   TelegramWebApp | null {
   if (
     typeof window ===
@@ -68,7 +64,7 @@ function telegram():
   ).Telegram?.WebApp ?? null;
 }
 
-function flag(
+function countryFlag(
   code?: string | null
 ) {
   if (
@@ -90,7 +86,9 @@ function flag(
     );
 }
 
-function sleep(ms: number) {
+function sleep(
+  ms: number
+) {
   return new Promise(
     (resolve) =>
       setTimeout(
@@ -101,11 +99,15 @@ function sleep(ms: number) {
 }
 
 export default function TopupPage() {
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-  const [error, setError] =
-    useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
 
   const [
     packages,
@@ -117,18 +119,16 @@ export default function TopupPage() {
   const [
     countryCode,
     setCountryCode,
-  ] =
-    useState<
-      string | null
-    >(null);
+  ] = useState<
+    string | null
+  >(null);
 
   const [
     buyingSlug,
     setBuyingSlug,
-  ] =
-    useState<
-      string | null
-    >(null);
+  ] = useState<
+    string | null
+  >(null);
 
   const [
     success,
@@ -161,7 +161,7 @@ export default function TopupPage() {
       async () => {
         try {
           const tg =
-            telegram();
+            getTelegram();
 
           tg?.ready?.();
           tg?.expand?.();
@@ -234,9 +234,7 @@ export default function TopupPage() {
               : "Ошибка загрузки"
           );
         } finally {
-          setLoading(
-            false
-          );
+          setLoading(false);
         }
       };
 
@@ -248,7 +246,7 @@ export default function TopupPage() {
       topupId: string
     ) => {
       const tg =
-        telegram();
+        getTelegram();
 
       const initData =
         tg?.initData ?? "";
@@ -291,9 +289,11 @@ export default function TopupPage() {
           "completed"
         ) {
           setSuccess(true);
+
           setStatusMessage(
             "Интернет успешно добавлен"
           );
+
           return;
         }
 
@@ -313,13 +313,13 @@ export default function TopupPage() {
           "processing"
         ) {
           setStatusMessage(
-            "Пополняем eSIM…"
+            "Добавляем интернет на eSIM…"
           );
         } else if (
           status === "paid"
         ) {
           setStatusMessage(
-            "Оплата получена. Запускаем Top Up…"
+            "Оплата получена. Подключаем пакет…"
           );
         } else {
           setStatusMessage(
@@ -327,9 +327,7 @@ export default function TopupPage() {
           );
         }
 
-        await sleep(
-          1500
-        );
+        await sleep(1500);
       }
 
       setStatusMessage(
@@ -347,16 +345,18 @@ export default function TopupPage() {
 
       setError("");
       setSuccess(false);
+
       setBuyingSlug(
         plan.slug
       );
+
       setStatusMessage(
-        "Создаём Top Up…"
+        "Подготавливаем пакет…"
       );
 
       try {
         const tg =
-          telegram();
+          getTelegram();
 
         const initData =
           tg?.initData ?? "";
@@ -370,12 +370,6 @@ export default function TopupPage() {
           );
         }
 
-        /*
-         * Шаг 1.
-         * Сервер повторно проверяет
-         * настоящий пакет и цену
-         * у eSIMAccess.
-         */
         const createResponse =
           await fetch(
             "/api/topups/create",
@@ -421,10 +415,6 @@ export default function TopupPage() {
           "Создаём счёт Telegram Stars…"
         );
 
-        /*
-         * Шаг 2.
-         * Создаём Stars invoice.
-         */
         const invoiceResponse =
           await fetch(
             "/api/payments/stars/topup",
@@ -471,11 +461,6 @@ export default function TopupPage() {
           );
         }
 
-        /*
-         * Шаг 3.
-         * Telegram сам показывает
-         * системное окно оплаты.
-         */
         tg.openInvoice(
           invoice.invoiceUrl,
           async (
@@ -486,11 +471,13 @@ export default function TopupPage() {
               "cancelled"
             ) {
               setStatusMessage(
-                "Оплата отменена"
+                ""
               );
+
               setBuyingSlug(
                 null
               );
+
               return;
             }
 
@@ -501,9 +488,11 @@ export default function TopupPage() {
               setError(
                 "Telegram не смог провести оплату"
               );
+
               setBuyingSlug(
                 null
               );
+
               return;
             }
 
@@ -531,6 +520,8 @@ export default function TopupPage() {
             : "Ошибка Top Up"
         );
 
+        setStatusMessage("");
+
         setBuyingSlug(
           null
         );
@@ -542,46 +533,83 @@ export default function TopupPage() {
       <main className="roam-page">
         <RoamBackground />
 
-        <div className="roam-container">
-          <div
+        <div
+          className="roam-container"
+          style={{
+            paddingBottom:
+              "180px",
+          }}
+        >
+          <header
             style={{
               display:
                 "flex",
+
               alignItems:
                 "center",
+
               justifyContent:
                 "space-between",
+
               marginBottom:
-                30,
+                20,
             }}
           >
             <BackButton href="/my-esims" />
+
             <Brand />
+
             <div
               style={{
                 width: 42,
               }}
             />
-          </div>
+          </header>
 
           <section
             className="roam-card"
             style={{
+              padding:
+                "36px 22px",
+
               textAlign:
                 "center",
 
-              paddingTop:
-                42,
-
-              paddingBottom:
-                42,
+              borderRadius:
+                28,
             }}
           >
             <div
               style={{
-                fontSize: 58,
-                marginBottom:
-                  18,
+                width: 72,
+                height: 72,
+
+                display:
+                  "grid",
+
+                placeItems:
+                  "center",
+
+                margin:
+                  "0 auto 20px",
+
+                borderRadius:
+                  24,
+
+                fontSize:
+                  34,
+
+                fontWeight:
+                  900,
+
+                color:
+                  "#071012",
+
+                background:
+                  "linear-gradient(135deg, #7bf7ff 0%, #5a8cff 100%)",
+
+                boxShadow:
+                  "0 18px 55px rgba(94, 219, 255, .22)",
               }}
             >
               ✓
@@ -592,27 +620,54 @@ export default function TopupPage() {
               style={{
                 width:
                   "fit-content",
+
                 margin:
-                  "0 auto 16px",
+                  "0 auto 13px",
               }}
             >
               ГОТОВО
             </div>
 
             <h1
-              className="roam-title"
               style={{
-                marginBottom:
-                  12,
+                margin:
+                  "0 0 10px",
+
+                fontSize:
+                  "clamp(30px, 8vw, 42px)",
+
+                lineHeight:
+                  1.02,
+
+                letterSpacing:
+                  "-0.04em",
               }}
             >
               Интернет добавлен
             </h1>
 
-            <p className="roam-subtitle">
+            <p
+              style={{
+                margin:
+                  "0 auto",
+
+                maxWidth:
+                  390,
+
+                color:
+                  "rgba(255,255,255,.58)",
+
+                fontSize:
+                  15,
+
+                lineHeight:
+                  1.55,
+              }}
+            >
               Пакет подключён к
               существующей eSIM.
-              Переустанавливать её
+              Ничего
+              переустанавливать
               не нужно.
             </p>
 
@@ -622,13 +677,18 @@ export default function TopupPage() {
               style={{
                 display:
                   "flex",
+
+                width:
+                  "100%",
+
                 marginTop:
-                  26,
+                  24,
+
                 textDecoration:
                   "none",
               }}
             >
-              Мои eSIM
+              Перейти к eSIM
               <span>→</span>
             </Link>
           </section>
@@ -643,86 +703,316 @@ export default function TopupPage() {
     <main className="roam-page">
       <RoamBackground />
 
-      <div className="roam-container">
-        <div
+      <div
+        className="roam-container"
+        style={{
+          paddingBottom:
+            "190px",
+        }}
+      >
+        <header
           style={{
             display:
               "flex",
+
             alignItems:
               "center",
+
             justifyContent:
               "space-between",
+
             gap: 12,
+
             marginBottom:
-              30,
+              16,
           }}
         >
           <BackButton href="/my-esims" />
+
           <Brand />
+
           <div
             style={{
               width: 42,
             }}
           />
-        </div>
+        </header>
 
         <section
           className="roam-card"
           style={{
+            position:
+              "relative",
+
+            overflow:
+              "hidden",
+
+            padding:
+              "20px",
+
+            borderRadius:
+              28,
+
             marginBottom:
-              18,
+              24,
+
+            background:
+              "linear-gradient(145deg, rgba(18,39,44,.94), rgba(7,10,12,.96) 62%)",
           }}
         >
           <div
+            aria-hidden="true"
             style={{
-              fontSize: 50,
-              marginBottom:
-                12,
+              position:
+                "absolute",
+
+              width: 180,
+              height: 180,
+
+              right: -70,
+              top: -75,
+
+              borderRadius:
+                "999px",
+
+              background:
+                "rgba(79,232,255,.12)",
+
+              filter:
+                "blur(35px)",
+
+              pointerEvents:
+                "none",
             }}
-          >
-            {flag(
-              countryCode
-            )}
-          </div>
+          />
 
           <div
-            className="roam-chip"
             style={{
-              width:
-                "fit-content",
-              marginBottom:
-                14,
+              position:
+                "relative",
+
+              display:
+                "flex",
+
+              alignItems:
+                "flex-start",
+
+              justifyContent:
+                "space-between",
+
+              gap: 16,
             }}
           >
-            TOP UP
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
+              <div
+                style={{
+                  display:
+                    "flex",
+
+                  alignItems:
+                    "center",
+
+                  gap: 9,
+
+                  marginBottom:
+                    16,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize:
+                      27,
+
+                    lineHeight:
+                      1,
+                  }}
+                >
+                  {countryFlag(
+                    countryCode
+                  )}
+                </div>
+
+                <div
+                  className="roam-chip"
+                  style={{
+                    width:
+                      "fit-content",
+                  }}
+                >
+                  TOP UP
+                </div>
+              </div>
+
+              <h1
+                style={{
+                  margin:
+                    "0 0 9px",
+
+                  maxWidth:
+                    330,
+
+                  fontSize:
+                    "clamp(30px, 8.8vw, 44px)",
+
+                  lineHeight:
+                    0.98,
+
+                  letterSpacing:
+                    "-0.045em",
+
+                  fontWeight:
+                    800,
+                }}
+              >
+                Добавить интернет
+              </h1>
+
+              <p
+                style={{
+                  margin: 0,
+
+                  maxWidth:
+                    350,
+
+                  color:
+                    "rgba(255,255,255,.54)",
+
+                  fontSize:
+                    14,
+
+                  lineHeight:
+                    1.5,
+                }}
+              >
+                Новый пакет
+                подключится к той
+                же eSIM. Повторная
+                установка не нужна.
+              </p>
+            </div>
           </div>
-
-          <h1
-            className="roam-title"
-            style={{
-              marginBottom:
-                10,
-            }}
-          >
-            Добавить интернет
-          </h1>
-
-          <p className="roam-subtitle">
-            Продолжай пользоваться
-            той же eSIM. Новый
-            QR-код устанавливать
-            не нужно.
-          </p>
         </section>
 
+        <div
+          style={{
+            display:
+              "flex",
+
+            justifyContent:
+              "space-between",
+
+            alignItems:
+              "flex-end",
+
+            gap: 14,
+
+            margin:
+              "0 2px 14px",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                color:
+                  "#75f6ff",
+
+                fontSize:
+                  11,
+
+                fontWeight:
+                  800,
+
+                letterSpacing:
+                  ".13em",
+
+                marginBottom:
+                  7,
+              }}
+            >
+              ДОСТУПНЫЕ ПАКЕТЫ
+            </div>
+
+            <h2
+              style={{
+                margin: 0,
+
+                fontSize:
+                  26,
+
+                lineHeight:
+                  1,
+
+                letterSpacing:
+                  "-0.035em",
+              }}
+            >
+              Выбери объём
+            </h2>
+          </div>
+
+          {!loading &&
+            packages.length >
+              0 && (
+              <div
+                style={{
+                  flexShrink:
+                    0,
+
+                  color:
+                    "rgba(255,255,255,.43)",
+
+                  fontSize:
+                    13,
+                }}
+              >
+                {
+                  packages.length
+                }{" "}
+                вариантов
+              </div>
+            )}
+        </div>
+
         {loading && (
-          <section className="roam-card">
-            Загружаем пакеты…
+          <section
+            className="roam-card"
+            style={{
+              padding:
+                "20px",
+
+              borderRadius:
+                24,
+
+              color:
+                "rgba(255,255,255,.65)",
+            }}
+          >
+            Загружаем доступные
+            пакеты…
           </section>
         )}
 
         {error && (
-          <section className="roam-card roam-error">
+          <section
+            className="roam-card"
+            style={{
+              padding:
+                "18px 20px",
+
+              borderRadius:
+                22,
+
+              border:
+                "1px solid rgba(255,100,100,.18)",
+
+              color:
+                "#ffb1b1",
+            }}
+          >
             {error}
           </section>
         )}
@@ -732,10 +1022,46 @@ export default function TopupPage() {
             <section
               className="roam-card-soft"
               style={{
+                display:
+                  "flex",
+
+                alignItems:
+                  "center",
+
+                gap: 10,
+
+                padding:
+                  "14px 16px",
+
                 marginBottom:
+                  14,
+
+                borderRadius:
+                  19,
+
+                fontSize:
                   14,
               }}
             >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+
+                  flexShrink:
+                    0,
+
+                  borderRadius:
+                    99,
+
+                  background:
+                    "#75f6ff",
+
+                  boxShadow:
+                    "0 0 18px rgba(117,246,255,.7)",
+                }}
+              />
+
               {statusMessage}
             </section>
           )}
@@ -744,273 +1070,386 @@ export default function TopupPage() {
           !error &&
           packages.length ===
             0 && (
-            <section className="roam-card">
+            <section
+              className="roam-card"
+              style={{
+                padding:
+                  "22px",
+
+                borderRadius:
+                  24,
+              }}
+            >
               Для этой eSIM
               сейчас нет доступных
-              Top Up-пакетов.
+              пакетов пополнения.
             </section>
           )}
 
         {!loading &&
           packages.length >
             0 && (
-            <>
-              <div
-                style={{
-                  display:
-                    "flex",
+            <div
+              style={{
+                display:
+                  "grid",
 
-                  justifyContent:
-                    "space-between",
+                gap: 11,
+              }}
+            >
+              {packages.map(
+                (plan) => {
+                  const busy =
+                    buyingSlug ===
+                    plan.slug;
 
-                  alignItems:
-                    "end",
+                  const anotherBusy =
+                    Boolean(
+                      buyingSlug
+                    ) &&
+                    !busy;
 
-                  margin:
-                    "26px 2px 14px",
-                }}
-              >
-                <div>
-                  <div
-                    className="roam-chip"
-                    style={{
-                      width:
-                        "fit-content",
-                      marginBottom:
-                        8,
-                    }}
-                  >
-                    ДОСТУПНО
-                  </div>
+                  return (
+                    <article
+                      key={
+                        plan.slug
+                      }
+                      className="roam-card"
+                      style={{
+                        padding:
+                          "18px",
 
-                  <h2
-                    style={{
-                      margin: 0,
-                      fontSize:
-                        25,
-                    }}
-                  >
-                    Выбери пакет
-                  </h2>
-                </div>
+                        borderRadius:
+                          25,
 
-                <span
-                  style={{
-                    opacity:
-                      0.55,
+                        opacity:
+                          anotherBusy
+                            ? 0.55
+                            : 1,
 
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {
-                    packages.length
-                  }{" "}
-                  вариантов
-                </span>
-              </div>
+                        transition:
+                          "opacity .2s ease, transform .2s ease",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display:
+                            "grid",
 
-              <div
-                style={{
-                  display:
-                    "grid",
-                  gap: 12,
-                }}
-              >
-                {packages.map(
-                  (plan) => {
-                    const busy =
-                      buyingSlug ===
-                      plan.slug;
+                          gridTemplateColumns:
+                            "1fr auto",
 
-                    return (
-                      <article
-                        key={
-                          plan.slug
-                        }
-                        className="roam-card"
+                          alignItems:
+                            "start",
+
+                          gap: 16,
+                        }}
                       >
+                        <div
+                          style={{
+                            minWidth:
+                              0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize:
+                                31,
+
+                              lineHeight:
+                                1,
+
+                              fontWeight:
+                                850,
+
+                              letterSpacing:
+                                "-0.045em",
+                            }}
+                          >
+                            {
+                              plan.dataLabel
+                            }
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                7,
+
+                              color:
+                                "rgba(255,255,255,.48)",
+
+                              fontSize:
+                                13,
+                            }}
+                          >
+                            {
+                              plan.durationLabel
+                            }
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            textAlign:
+                              "right",
+
+                            flexShrink:
+                              0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize:
+                                28,
+
+                              lineHeight:
+                                1,
+
+                              fontWeight:
+                                850,
+
+                              letterSpacing:
+                                "-0.04em",
+                            }}
+                          >
+                            $
+                            {plan.amount.toFixed(
+                              2
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                6,
+
+                              color:
+                                "rgba(255,255,255,.32)",
+
+                              fontSize:
+                                11,
+
+                              letterSpacing:
+                                ".08em",
+                            }}
+                          >
+                            USD
+                          </div>
+                        </div>
+                      </div>
+
+                      {plan.networks
+                        .length >
+                        0 && (
                         <div
                           style={{
                             display:
                               "flex",
 
-                            justifyContent:
-                              "space-between",
+                            flexWrap:
+                              "wrap",
 
-                            alignItems:
-                              "flex-start",
-
-                            gap: 18,
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontSize:
-                                  27,
-
-                                fontWeight:
-                                  800,
-                              }}
-                            >
-                              {
-                                plan.dataLabel
-                              }
-                            </div>
-
-                            <div
-                              style={{
-                                marginTop:
-                                  6,
-
-                                opacity:
-                                  0.65,
-
-                                fontSize:
-                                  14,
-                              }}
-                            >
-                              {
-                                plan.durationLabel
-                              }
-                            </div>
-                          </div>
-
-                          <div
-                            style={{
-                              textAlign:
-                                "right",
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize:
-                                  25,
-
-                                fontWeight:
-                                  800,
-                              }}
-                            >
-                              $
-                              {plan.amount.toFixed(
-                                2
-                              )}
-                            </div>
-
-                            <div
-                              style={{
-                                marginTop:
-                                  5,
-
-                                opacity:
-                                  0.48,
-
-                                fontSize:
-                                  12,
-                              }}
-                            >
-                              USD
-                            </div>
-                          </div>
-                        </div>
-
-                        {plan.networks
-                          .length >
-                          0 && (
-                          <div
-                            style={{
-                              display:
-                                "flex",
-
-                              flexWrap:
-                                "wrap",
-
-                              gap: 7,
-
-                              marginTop:
-                                17,
-                            }}
-                          >
-                            {plan.networks.map(
-                              (
-                                network
-                              ) => (
-                                <span
-                                  key={
-                                    network
-                                  }
-                                  className="roam-chip"
-                                >
-                                  {
-                                    network
-                                  }
-                                </span>
-                              )
-                            )}
-                          </div>
-                        )}
-
-                        <button
-                          type="button"
-                          disabled={
-                            Boolean(
-                              buyingSlug
-                            )
-                          }
-                          onClick={() =>
-                            buy(
-                              plan
-                            )
-                          }
-                          className="roam-primary-button"
-                          style={{
-                            width:
-                              "100%",
+                            gap: 6,
 
                             marginTop:
-                              18,
+                              14,
+                          }}
+                        >
+                          {plan.networks.map(
+                            (
+                              network
+                            ) => (
+                              <span
+                                key={
+                                  network
+                                }
+                                style={{
+                                  display:
+                                    "inline-flex",
 
-                            opacity:
-                              buyingSlug &&
-                              !busy
-                                ? 0.45
-                                : 1,
+                                  alignItems:
+                                    "center",
+
+                                  minHeight:
+                                    28,
+
+                                  padding:
+                                    "0 10px",
+
+                                  borderRadius:
+                                    999,
+
+                                  border:
+                                    "1px solid rgba(117,246,255,.13)",
+
+                                  background:
+                                    "rgba(117,246,255,.055)",
+
+                                  color:
+                                    "rgba(159,247,255,.88)",
+
+                                  fontSize:
+                                    11,
+
+                                  fontWeight:
+                                    700,
+                                }}
+                              >
+                                {
+                                  network
+                                }
+                              </span>
+                            )
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(
+                            buyingSlug
+                          )
+                        }
+                        onClick={() =>
+                          buy(plan)
+                        }
+                        style={{
+                          width:
+                            "100%",
+
+                          minHeight:
+                            50,
+
+                          marginTop:
+                            15,
+
+                          padding:
+                            "0 17px",
+
+                          display:
+                            "flex",
+
+                          alignItems:
+                            "center",
+
+                          justifyContent:
+                            "space-between",
+
+                          gap: 10,
+
+                          border: 0,
+
+                          borderRadius:
+                            17,
+
+                          cursor:
+                            buyingSlug
+                              ? "default"
+                              : "pointer",
+
+                          color:
+                            "#061011",
+
+                          background:
+                            "linear-gradient(135deg, #79f7ff 0%, #5a8cff 100%)",
+
+                          fontSize:
+                            14,
+
+                          fontWeight:
+                            850,
+
+                          letterSpacing:
+                            "-0.01em",
+
+                          boxShadow:
+                            "0 12px 28px rgba(91,181,255,.13)",
+
+                          opacity:
+                            anotherBusy
+                              ? 0.6
+                              : 1,
+                        }}
+                      >
+                        <span>
+                          {busy
+                            ? "Подготавливаем…"
+                            : "Пополнить eSIM"}
+                        </span>
+
+                        <span
+                          style={{
+                            display:
+                              "flex",
+
+                            alignItems:
+                              "center",
+
+                            gap: 7,
+
+                            fontSize:
+                              15,
                           }}
                         >
                           {busy
-                            ? "Подготавливаем…"
-                            : `Пополнить · $${plan.amount.toFixed(
+                            ? "•••"
+                            : `$${plan.amount.toFixed(
                                 2
-                              )}`}
-                        </button>
-                      </article>
-                    );
-                  }
-                )}
-              </div>
-            </>
+                              )}  →`}
+                        </span>
+                      </button>
+                    </article>
+                  );
+                }
+              )}
+            </div>
           )}
 
-        <Link
-          href="/my-esims"
-          className="roam-secondary-button"
+        <div
           style={{
-            display:
-              "block",
-
-            width:
-              "100%",
+            marginTop:
+              16,
 
             textAlign:
               "center",
-
-            marginTop:
-              18,
           }}
         >
-          Вернуться к моим eSIM
-        </Link>
+          <Link
+            href="/my-esims"
+            style={{
+              display:
+                "inline-flex",
+
+              alignItems:
+                "center",
+
+              justifyContent:
+                "center",
+
+              minHeight:
+                42,
+
+              padding:
+                "0 16px",
+
+              borderRadius:
+                999,
+
+              color:
+                "rgba(255,255,255,.5)",
+
+              textDecoration:
+                "none",
+
+              fontSize:
+                13,
+            }}
+          >
+            ← Вернуться к моим eSIM
+          </Link>
+        </div>
 
         <BottomNav />
       </div>

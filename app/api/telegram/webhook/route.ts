@@ -142,7 +142,7 @@ export async function POST(
     ) {
       const telegramResponse =
         await fetch(
-          `https://api.telegram.org/bot${botToken}/sendMessage`,
+          `https://api.telegram.org/bot${botToken}/sendPhoto`,
           {
             method: "POST",
 
@@ -158,18 +158,16 @@ export async function POST(
               parse_mode:
                 "HTML",
 
-              text:
+              photo:
+                "https://wyld-roam.vercel.app/wyld-roam-welcome.png",
+
+              caption:
                 [
                   "👋 <b>Добро пожаловать в WYLD ROAM</b>",
                   "",
-                  "🌍 eSIM для путешествий по всему миру.",
+                  "eSIM для путешествий по всему миру 🌍",
                   "",
-                  "• Интернет в 190+ странах",
-                  "• Быстрое подключение",
-                  "• Без физической SIM-карты",
-                  "• Управление eSIM прямо в Telegram",
-                  "",
-                  "Выберите направление и подключите интернет за несколько минут. ✈️",
+                  "Выберите страну, подходящий тариф и подключите интернет за несколько минут.",
                 ].join("\n"),
 
               reply_markup: {

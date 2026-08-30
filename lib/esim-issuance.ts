@@ -168,15 +168,11 @@ export async function issueEsimForOrder(
   } = await supabase
     .from("roam_payments")
     .select(
-      "id, status"
+      "id, provider, status"
     )
     .eq(
       "order_id",
       order.id
-    )
-    .eq(
-      "provider",
-      "telegram_stars"
     )
     .eq(
       "status",
@@ -190,7 +186,7 @@ export async function issueEsimForOrder(
     !payment
   ) {
     throw new Error(
-      "Paid Telegram Stars payment not found"
+      "Paid payment not found"
     );
   }
 

@@ -127,6 +127,11 @@ function PaymentContent() {
   ] = useState(false);
 
   const [
+    cryptoPaying,
+    setCryptoPaying,
+  ] = useState(false);
+
+  const [
     error,
     setError,
   ] = useState<
@@ -383,6 +388,109 @@ function PaymentContent() {
     }
   }
 
+  async function payWithCrypto() {
+    if (
+      !order ||
+      paying ||
+      cryptoPaying
+    ) {
+      return;
+    }
+
+    const initData =
+      getTelegramInitData();
+
+    if (!initData) {
+      setError(
+        "Криптооплата доступна внутри Telegram."
+      );
+      return;
+    }
+
+    setCryptoPaying(true);
+    setError(null);
+
+    try {
+      const response =
+        await fetch(
+          "/api/payments/heleket/create",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              "x-telegram-init-data":
+                initData,
+            },
+
+            body:
+              JSON.stringify({
+                orderId:
+                  order.id,
+              }),
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !result.success ||
+        !result.paymentUrl
+      ) {
+        throw new Error(
+          result.error ??
+            "Не удалось создать крипто-платёж"
+        );
+      }
+
+      const webApp =
+        getTelegramWebApp();
+
+      if (webApp) {
+        const openLink =
+          (
+            webApp as unknown as {
+              openLink?: (
+                url: string
+              ) => void;
+            }
+          ).openLink;
+
+        if (openLink) {
+          openLink(
+            result.paymentUrl
+          );
+
+          setCryptoPaying(
+            false
+          );
+
+          return;
+        }
+      }
+
+      window.location.href =
+        result.paymentUrl;
+    } catch (err) {
+      console.error(
+        "Crypto payment error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Ошибка криптооплаты"
+      );
+
+      setCryptoPaying(false);
+    }
+  }
+
   function openStarsTopUp() {
     const webApp =
       getTelegramWebApp();
@@ -472,7 +580,7 @@ function PaymentContent() {
 
           <p className="roam-subtitle mt-3">
             {isPending
-              ? "Оплатите eSIM через Telegram Stars."
+              ? "Выберите удобный способ оплаты."
               : "Платёж подтверждён. WYLD ROAM обрабатывает заказ."}
           </p>
         </header>
@@ -608,18 +716,39 @@ function PaymentContent() {
             <button
               type="button"
               onClick={
-                openStarsTopUp
+                payWithCrypto
+              }
+              disabled={
+                paying ||
+                cryptoPaying
               }
               className="roam-secondary mt-3"
+            >
+              {cryptoPaying
+                ? "Создаём крипто-платёж..."
+                : "Оплатить криптовалютой"}
+            </button>
+
+            <button
+              type="button"
+              onClick={
+                openStarsTopUp
+              }
+              disabled={
+                paying ||
+                cryptoPaying
+              }
+              className="mt-3 w-full rounded-[18px] px-5 py-4 text-sm font-semibold text-white/45 transition hover:text-white/70"
             >
               Купить Stars
             </button>
 
             <p className="mt-4 text-center text-[10px] leading-5 text-white/24">
-              Покупка Stars
-              открывается через
-              официальный сервис
-              Telegram.
+              Telegram Stars оплачиваются
+              внутри Telegram.
+              Криптооплата открывается
+              через защищённую платёжную
+              страницу Heleket.
             </p>
           </>
         ) : (

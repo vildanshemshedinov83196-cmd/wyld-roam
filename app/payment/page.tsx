@@ -132,6 +132,11 @@ function PaymentContent() {
   ] = useState(false);
 
   const [
+    sbpPaying,
+    setSbpPaying,
+  ] = useState(false);
+
+  const [
     error,
     setError,
   ] = useState<
@@ -491,6 +496,120 @@ function PaymentContent() {
     }
   }
 
+  async function payWithSbp() {
+    if (
+      !order ||
+      sbpPaying
+    ) {
+      return;
+    }
+
+    const initData =
+      getTelegramInitData();
+
+    if (!initData) {
+      setError(
+        "Оплата СБП доступна внутри Telegram."
+      );
+      return;
+    }
+
+    setSbpPaying(true);
+    setError(null);
+
+    try {
+      const response =
+        await fetch(
+          "/api/payments/tbank/create",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              "x-telegram-init-data":
+                initData,
+            },
+
+            body:
+              JSON.stringify({
+                orderId:
+                  order.id,
+              }),
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !result.success ||
+        !result.paymentUrl
+      ) {
+        throw new Error(
+          result.error ??
+            "Не удалось создать СБП-платёж"
+        );
+      }
+
+      const webApp =
+        getTelegramWebApp();
+
+      if (webApp) {
+        const openLink =
+          (
+            webApp as unknown as {
+              openLink?: (
+                url: string
+              ) => void;
+            }
+          ).openLink;
+
+        if (openLink) {
+          openLink(
+            result.paymentUrl
+          );
+
+          setSbpPaying(
+            false
+          );
+
+          return;
+        }
+      }
+
+      const opened =
+        window.open(
+          result.paymentUrl,
+          "_blank",
+          "noopener,noreferrer"
+        );
+
+      if (!opened) {
+        throw new Error(
+          "Не удалось открыть СБП. Разрешите открытие ссылки."
+        );
+      }
+
+      setSbpPaying(false);
+    } catch (err) {
+      console.error(
+        "SBP payment error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Ошибка оплаты СБП"
+      );
+
+      setSbpPaying(false);
+    }
+  }
+
   function openStarsTopUp() {
     const webApp =
       getTelegramWebApp();
@@ -701,10 +820,31 @@ function PaymentContent() {
             <button
               type="button"
               onClick={
+                payWithSbp
+              }
+              disabled={
+                paying ||
+                cryptoPaying ||
+                sbpPaying
+              }
+              className="roam-primary mt-6"
+            >
+              {sbpPaying
+                ? "Создаём СБП-платёж..."
+                : "Оплатить через СБП"}
+            </button>
+
+            <button
+              type="button"
+              onClick={
                 payWithStars
               }
-              disabled={paying}
-              className="roam-primary mt-6"
+              disabled={
+                paying ||
+                cryptoPaying ||
+                sbpPaying
+              }
+              className="roam-secondary mt-3"
             >
               {paying
                 ? "Ожидаем оплату..."
@@ -720,7 +860,8 @@ function PaymentContent() {
               }
               disabled={
                 paying ||
-                cryptoPaying
+                cryptoPaying ||
+                sbpPaying
               }
               className="roam-secondary mt-3"
             >
@@ -736,7 +877,8 @@ function PaymentContent() {
               }
               disabled={
                 paying ||
-                cryptoPaying
+                cryptoPaying ||
+                sbpPaying
               }
               className="mt-3 w-full rounded-[18px] px-5 py-4 text-sm font-semibold text-white/45 transition hover:text-white/70"
             >
@@ -744,6 +886,8 @@ function PaymentContent() {
             </button>
 
             <p className="mt-4 text-center text-[10px] leading-5 text-white/24">
+              СБП открывается через
+              защищённую страницу НСПК.
               Telegram Stars оплачиваются
               внутри Telegram.
               Криптооплата открывается

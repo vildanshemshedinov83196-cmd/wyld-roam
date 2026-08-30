@@ -197,14 +197,31 @@ export async function POST() {
       error
     );
 
+    const cause =
+      error instanceof Error
+        ? (error as Error & {
+            cause?: {
+              code?: string;
+              message?: string;
+            };
+          }).cause
+        : undefined;
+
     return NextResponse.json(
       {
         ok: false,
         error:
-          error instanceof
-          Error
+          error instanceof Error
             ? error.message
             : "Unknown error",
+
+        causeCode:
+          cause?.code ??
+          null,
+
+        causeMessage:
+          cause?.message ??
+          null,
       },
       {
         status: 500,

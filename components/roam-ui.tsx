@@ -54,6 +54,11 @@ export function BottomNav({
       "/my-esims"
     );
 
+  const supportActive =
+    pathname.startsWith(
+      "/support"
+    );
+
   const adminActive =
     pathname.startsWith(
       "/admin"
@@ -87,6 +92,20 @@ export function BottomNav({
           ◇
         </span>
         <span>Мои eSIM</span>
+      </Link>
+
+      <Link
+        href="/support"
+        className={
+          supportActive
+            ? "roam-nav-item roam-nav-item-active"
+            : "roam-nav-item"
+        }
+      >
+        <span className="roam-nav-icon">
+          ?
+        </span>
+        <span>Помощь</span>
       </Link>
 
       {isOwner && (

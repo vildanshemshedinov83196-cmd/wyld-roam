@@ -177,6 +177,26 @@ export async function POST(
       }
     }
 
+    const isTestWebhook =
+      String(
+        payload.order_id ?? ""
+      ).startsWith(
+        "webhook_test_"
+      );
+
+    if (isTestWebhook) {
+      console.log(
+        "Heleket test paid webhook accepted"
+      );
+
+      return new Response(
+        "OK",
+        {
+          status: 200,
+        }
+      );
+    }
+
     try {
       await issueEsimForOrder(
         payment.order_id

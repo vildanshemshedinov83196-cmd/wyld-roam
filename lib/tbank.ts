@@ -1,14 +1,40 @@
 import crypto from "crypto";
+import https from "node:https";
+import tls from "node:tls";
+
+import {
+  TBANK_EXTRA_CA_B64,
+} from "./tbank-ca";
 
 const TBANK_API =
   "https://securepay.tinkoff.ru/v2";
 
+const extraCa =
+  Buffer.from(
+    TBANK_EXTRA_CA_B64,
+    "base64"
+  ).toString("utf8");
+
+/*
+ * Важно:
+ * ca в https.request заменяет
+ * стандартный набор CA.
+ *
+ * Поэтому сохраняем стандартные
+ * сертификаты Node.js и добавляем
+ * Russian Trusted CA.
+ */
+const tbankCa = [
+  ...tls.rootCertificates,
+  extraCa,
+];
+
 function getConfig() {
   const terminalKey =
-    process.env.TBANK_TERMINAL_KEY;
+    process.env.TBANK_TERMINAL_KEY?.trim();
 
   const password =
-    process.env.TBANK_PASSWORD;
+    process.env.TBANK_PASSWORD?.trim();
 
   if (!terminalKey) {
     throw new Error(
@@ -141,6 +167,112 @@ export function verifyTbankToken(
   );
 }
 
+function postTbank(
+  url: string,
+  body: Record<
+    string,
+    unknown
+  >
+): Promise<{
+  status: number;
+  text: string;
+}> {
+  return new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+      const json =
+        JSON.stringify(body);
+
+      const request =
+        https.request(
+          url,
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              "Content-Length":
+                Buffer.byteLength(
+                  json
+                ),
+            },
+
+            ca:
+              tbankCa,
+
+            rejectUnauthorized:
+              true,
+          },
+          (response) => {
+            const chunks:
+              Buffer[] = [];
+
+            response.on(
+              "data",
+              (chunk) => {
+                chunks.push(
+                  Buffer.isBuffer(
+                    chunk
+                  )
+                    ? chunk
+                    : Buffer.from(
+                        chunk
+                      )
+                );
+              }
+            );
+
+            response.on(
+              "end",
+              () => {
+                resolve({
+                  status:
+                    response
+                      .statusCode ??
+                    0,
+
+                  text:
+                    Buffer.concat(
+                      chunks
+                    ).toString(
+                      "utf8"
+                    ),
+                });
+              }
+            );
+          }
+        );
+
+      request.setTimeout(
+        15000,
+        () => {
+          request.destroy(
+            new Error(
+              "T-Bank request timeout"
+            )
+          );
+        }
+      );
+
+      request.on(
+        "error",
+        reject
+      );
+
+      request.write(
+        json
+      );
+
+      request.end();
+    }
+  );
+}
+
 export async function tbankRequest<
   T
 >(
@@ -168,25 +300,14 @@ export async function tbankRequest<
       ),
   };
 
-  const response =
-    await fetch(
+  const {
+    status,
+    text,
+  } =
+    await postTbank(
       `${TBANK_API}/${method}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-        body:
-          JSON.stringify(
-            signedBody
-          ),
-        cache: "no-store",
-      }
+      signedBody
     );
-
-  const text =
-    await response.text();
 
   let data: unknown;
 
@@ -199,9 +320,12 @@ export async function tbankRequest<
     );
   }
 
-  if (!response.ok) {
+  if (
+    status < 200 ||
+    status >= 300
+  ) {
     throw new Error(
-      `T-Bank ${method} HTTP ${response.status}: ${text}`
+      `T-Bank ${method} HTTP ${status}: ${text}`
     );
   }
 

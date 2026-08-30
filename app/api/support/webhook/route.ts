@@ -323,10 +323,33 @@ async function forwardToOwner(
       ? `@${user.username}`
       : "нет";
 
-  const category =
+  const repliedText =
+    message.reply_to_message?.text ?? "";
+
+  let category =
     supportCategories.get(
       message.chat.id
     ) ?? "other";
+
+  if (
+    repliedText.includes(
+      "Проблема с оплатой"
+    )
+  ) {
+    category = "payment";
+  } else if (
+    repliedText.includes(
+      "Проблема с eSIM"
+    )
+  ) {
+    category = "esim";
+  } else if (
+    repliedText.includes(
+      "Другой вопрос"
+    )
+  ) {
+    category = "other";
+  }
 
   const ownerText =
     "🆘 Новое обращение WYLD ROAM\n\n" +

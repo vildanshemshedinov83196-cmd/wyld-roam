@@ -331,13 +331,7 @@ export default function PlansPage() {
           String(
             plan.retailPrice
           ),
-        networks:
-          plan.operators
-            .map(
-              (operator) =>
-                `${operator.name} ${operator.network}`
-            )
-            .join(", "),
+
       });
 
     router.push(
@@ -374,17 +368,14 @@ export default function PlansPage() {
                 : plan.data}
             </div>
 
-            <div className="mt-1 text-sm text-white/42">
-              {daily
-                ? durationLabel(
-                    plan.duration,
-                    plan.durationUnit
-                  )
-                : durationLabel(
-                    plan.duration,
-                    plan.durationUnit
-                  )}
-            </div>
+            {daily && (
+              <div className="mt-1 text-sm text-white/42">
+                {durationLabel(
+                  plan.duration,
+                  plan.durationUnit
+                )}
+              </div>
+            )}
           </div>
 
           <div className="text-right">
@@ -411,23 +402,6 @@ export default function PlansPage() {
               </span>
               <span>
                 {plan.speed}
-              </span>
-            </div>
-          )}
-
-          {plan.operators.length >
-            0 && (
-            <div className="flex gap-2">
-              <span className="text-cyan-200">
-                ◉
-              </span>
-              <span>
-                {plan.operators
-                  .map(
-                    (operator) =>
-                      `${operator.name} ${operator.network}`
-                  )
-                  .join(", ")}
               </span>
             </div>
           )}

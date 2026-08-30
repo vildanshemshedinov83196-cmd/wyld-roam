@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
     const packages: EsimPackage[] =
       data.obj?.packageList ?? [];
 
-    const plans = packages.map((item) => {
+    const mappedPlans = packages.map((item) => {
       const wholesalePrice = item.price / 10000;
 
       const retailPrice =
@@ -171,8 +171,140 @@ export async function GET(request: NextRequest) {
         currency: item.currencyCode,
 
         operators,
+
+        // Используется только на сервере для выбора
+        // самого выгодного пакета среди дублей.
+        _wholesalePrice: wholesalePrice,
       };
     });
+
+    /*
+     * Финальная линейка WYLD ROAM:
+     *
+     * 3 GB  / 30 дней
+     * 5 GB  / 30 дней
+     * 10 GB / 30 дней
+     * 20 GB / 30 дней
+     * 50 GB / 30 дней
+     *
+     * Другие объёмы и сроки клиенту не показываем.
+     * Если eSIMAccess возвращает несколько SKU одного объёма,
+     * сначала предпочитаем пополняемый пакет,
+     * затем выбираем самый дешёвый supplier SKU.
+     */
+
+    const allowedVolumes = new Set([
+      "3 GB",
+      "5 GB",
+      "10 GB",
+      "20 GB",
+      "50 GB",
+    ]);
+
+    const eligiblePlans =
+      mappedPlans.filter((plan) => {
+        const unit =
+          plan.durationUnit.toLowerCase();
+
+        const isThirtyDays =
+          plan.duration === 30 &&
+          unit.includes("day");
+
+        const isAllowedVolume =
+          allowedVolumes.has(
+            plan.data
+          );
+
+        // dataType 1 = обычный fixed data plan.
+        // Daily/FUP пакеты в финальный каталог не попадают.
+        const isFixedData =
+          plan.dataType === 1;
+
+        return (
+          isThirtyDays &&
+          isAllowedVolume &&
+          isFixedData
+        );
+      });
+
+    const uniquePlans = new Map<
+      string,
+      (typeof mappedPlans)[number]
+    >();
+
+    for (const plan of eligiblePlans) {
+      const duplicateKey =
+        plan.data;
+
+      const existing =
+        uniquePlans.get(
+          duplicateKey
+        );
+
+      if (!existing) {
+        uniquePlans.set(
+          duplicateKey,
+          plan
+        );
+        continue;
+      }
+
+      // Если один пакет поддерживает Top Up,
+      // а другой нет — выбираем пополняемый.
+      if (
+        plan.topUpSupported &&
+        !existing.topUpSupported
+      ) {
+        uniquePlans.set(
+          duplicateKey,
+          plan
+        );
+        continue;
+      }
+
+      if (
+        existing.topUpSupported &&
+        !plan.topUpSupported
+      ) {
+        continue;
+      }
+
+      // При одинаковых возможностях
+      // оставляем самый дешёвый supplier SKU.
+      if (
+        plan._wholesalePrice <
+        existing._wholesalePrice
+      ) {
+        uniquePlans.set(
+          duplicateKey,
+          plan
+        );
+      }
+    }
+
+    const volumeOrder =
+      new Map([
+        ["3 GB", 3],
+        ["5 GB", 5],
+        ["10 GB", 10],
+        ["20 GB", 20],
+        ["50 GB", 50],
+      ]);
+
+    const plans = Array.from(
+      uniquePlans.values()
+    )
+      .sort(
+        (a, b) =>
+          (volumeOrder.get(a.data) ?? 999) -
+          (volumeOrder.get(b.data) ?? 999)
+      )
+      .map(
+        ({
+          _wholesalePrice,
+          ...plan
+        }) => plan
+      );
 
     return Response.json({
       success: true,

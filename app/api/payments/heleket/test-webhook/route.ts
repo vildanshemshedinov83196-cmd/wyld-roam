@@ -9,15 +9,17 @@ export async function POST(
     const rawBody =
       await request.text();
 
-    const sign =
-      request.headers.get(
-        "sign"
-      );
+    const payload =
+      JSON.parse(
+        rawBody
+      ) as Record<
+        string,
+        unknown
+      >;
 
     if (
       !verifyHeleketWebhook(
-        rawBody,
-        sign
+        payload
       )
     ) {
       return new Response(
@@ -28,26 +30,23 @@ export async function POST(
       );
     }
 
-    const payload =
-      JSON.parse(rawBody);
-
     console.log(
       "Heleket TEST webhook:",
       {
         uuid:
-          payload?.uuid ??
+          payload.uuid ??
           null,
 
         order_id:
-          payload?.order_id ??
+          payload.order_id ??
           null,
 
         status:
-          payload?.status ??
+          payload.status ??
           null,
 
         payment_status:
-          payload?.payment_status ??
+          payload.payment_status ??
           null,
       }
     );

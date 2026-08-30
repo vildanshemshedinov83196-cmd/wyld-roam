@@ -38,9 +38,13 @@ export function createHeleketSign(
 }
 
 export function verifyHeleketWebhook(
-  rawBody: string,
-  receivedSign: string | null
+  payload: Record<string, unknown>
 ) {
+  const receivedSign =
+    typeof payload.sign === "string"
+      ? payload.sign
+      : "";
+
   if (!receivedSign) {
     return false;
   }
@@ -48,17 +52,43 @@ export function verifyHeleketWebhook(
   const { apiKey } =
     getConfig();
 
+  const {
+    sign: _sign,
+    ...unsignedPayload
+  } = payload;
+
+  /*
+   * Heleket формирует webhook-signature
+   * без поля sign.
+   *
+   * В их документации отдельно отмечено,
+   * что slash должен сериализоваться как \/.
+   */
+  const unsignedJson =
+    JSON.stringify(
+      unsignedPayload
+    ).replace(
+      /\//g,
+      "\\/"
+    );
+
   const expected =
     createHeleketSign(
-      rawBody,
+      unsignedJson,
       apiKey
     );
 
   const a =
-    Buffer.from(expected);
+    Buffer.from(
+      expected,
+      "utf8"
+    );
 
   const b =
-    Buffer.from(receivedSign);
+    Buffer.from(
+      receivedSign,
+      "utf8"
+    );
 
   if (a.length !== b.length) {
     return false;

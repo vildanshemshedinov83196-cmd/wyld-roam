@@ -13,9 +13,12 @@ import {
 type HeleketWebhook = {
   uuid?: string;
   order_id?: string;
+  amount?: string;
+  currency?: string;
   status?: string;
   payment_status?: string;
   additional_data?: string;
+  sign?: string;
 };
 
 export async function POST(
@@ -25,15 +28,17 @@ export async function POST(
     const rawBody =
       await request.text();
 
-    const sign =
-      request.headers.get(
-        "sign"
-      );
+    const payload =
+      JSON.parse(
+        rawBody
+      ) as HeleketWebhook;
 
     if (
       !verifyHeleketWebhook(
-        rawBody,
-        sign
+        payload as Record<
+          string,
+          unknown
+        >
       )
     ) {
       console.error(
@@ -47,11 +52,6 @@ export async function POST(
         }
       );
     }
-
-    const payload =
-      JSON.parse(
-        rawBody
-      ) as HeleketWebhook;
 
     const paymentStatus =
       payload.payment_status ??
@@ -97,7 +97,7 @@ export async function POST(
     } = await supabase
       .from("roam_payments")
       .select(
-        "id,order_id,status"
+        "id,order_id,status,amount,currency"
       )
       .eq(
         "provider",
@@ -123,6 +123,89 @@ export async function POST(
         "Payment not found",
         {
           status: 404,
+        }
+      );
+    }
+
+    /*
+     * Защита от подмены заказа.
+     *
+     * additional_data при создании
+     * invoice содержит наш настоящий
+     * roam_order UUID.
+     */
+    if (
+      payload.additional_data !==
+      payment.order_id
+    ) {
+      console.error(
+        "Heleket order mismatch"
+      );
+
+      return new Response(
+        "Order mismatch",
+        {
+          status: 400,
+        }
+      );
+    }
+
+    /*
+     * Сверяем выставленную сумму.
+     */
+    const webhookAmount =
+      Number(payload.amount);
+
+    const expectedAmount =
+      Number(payment.amount);
+
+    if (
+      !Number.isFinite(
+        webhookAmount
+      ) ||
+      !Number.isFinite(
+        expectedAmount
+      ) ||
+      Math.abs(
+        webhookAmount -
+          expectedAmount
+      ) > 0.000001
+    ) {
+      console.error(
+        "Heleket amount mismatch:",
+        {
+          webhookAmount,
+          expectedAmount,
+        }
+      );
+
+      return new Response(
+        "Amount mismatch",
+        {
+          status: 400,
+        }
+      );
+    }
+
+    /*
+     * Invoice мы создаём в USD.
+     */
+    if (
+      String(
+        payload.currency ?? ""
+      ).toUpperCase() !==
+      String(
+        payment.currency ?? ""
+      ).toUpperCase()
+    ) {
+      console.error(
+        "Heleket currency mismatch"
+      );
+
+      return new Response(
+        "Currency mismatch",
+        {
+          status: 400,
         }
       );
     }

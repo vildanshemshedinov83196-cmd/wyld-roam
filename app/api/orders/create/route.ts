@@ -22,6 +22,7 @@ type EsimPackage = {
   price: number;
   currencyCode?: string;
   volume?: number;
+  dataType?: number;
   duration?: number;
   durationUnit?: string;
   location?: string;
@@ -242,7 +243,14 @@ export async function POST(
      */
     const retailPrice =
       calculateRetailPrice(
-        supplierCost
+        supplierCost,
+        Number(
+          selectedPackage.volume
+        ),
+        Number(
+          selectedPackage.dataType ??
+            1
+        )
       );
 
     /*

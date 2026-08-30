@@ -168,6 +168,13 @@ export default function PlansPage() {
   ] = useState<Plan[]>([]);
 
   const [
+    activeCategory,
+    setActiveCategory,
+  ] = useState<
+    "standard" | "daily"
+  >("standard");
+
+  const [
     locations,
     setLocations,
   ] = useState<Location[]>([]);
@@ -481,67 +488,135 @@ export default function PlansPage() {
           </div>
         ) : (
           <>
-            {regularPlans.length >
-              0 && (
-              <section className="mt-9">
-                <div className="mb-4 flex items-end justify-between">
-                  <div>
+            {(regularPlans.length >
+              0 ||
+              dailyPlans.length >
+                0) && (
+              <div className="mt-9">
+                <div className="grid grid-cols-2 rounded-[22px] border border-white/10 bg-white/[0.045] p-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveCategory(
+                        "standard"
+                      )
+                    }
+                    className={`rounded-[17px] px-3 py-3.5 text-sm font-bold transition ${
+                      activeCategory ===
+                      "standard"
+                        ? "bg-gradient-to-r from-violet-500 to-indigo-500 text-white shadow-lg"
+                        : "text-white/40"
+                    }`}
+                  >
+                    Стандартные
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveCategory(
+                        "daily"
+                      )
+                    }
+                    className={`rounded-[17px] px-3 py-3.5 text-sm font-bold transition ${
+                      activeCategory ===
+                      "daily"
+                        ? "bg-gradient-to-r from-violet-500 to-indigo-500 text-white shadow-lg"
+                        : "text-white/40"
+                    }`}
+                  >
+                    Суточные
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeCategory ===
+              "standard" &&
+              regularPlans.length >
+                0 && (
+                <section className="mt-7">
+                  <div className="mb-4 flex items-end justify-between">
+                    <div>
+                      <div className="roam-kicker">
+                        Standard
+                      </div>
+
+                      <h2 className="mt-2 text-xl font-bold">
+                        Стандартные тарифы
+                      </h2>
+                    </div>
+
+                    <div className="text-xs text-white/30">
+                      {
+                        regularPlans.length
+                      }{" "}
+                      тарифов
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {regularPlans.map(
+                      (plan) =>
+                        renderPlan(
+                          plan
+                        )
+                    )}
+                  </div>
+                </section>
+              )}
+
+            {activeCategory ===
+              "daily" &&
+              dailyPlans.length >
+                0 && (
+                <section className="mt-7">
+                  <div className="mb-4">
                     <div className="roam-kicker">
-                      Packages
+                      Daily
                     </div>
 
                     <h2 className="mt-2 text-xl font-bold">
-                      Интернет-пакеты
+                      Суточные тарифы
                     </h2>
+
+                    <p className="mt-2 text-xs leading-5 text-white/37">
+                      Выберите объём
+                      интернета на один
+                      день.
+                    </p>
                   </div>
 
-                  <div className="text-xs text-white/30">
-                    {
-                      regularPlans.length
-                    }{" "}
-                    тарифов
+                  <div className="space-y-4">
+                    {dailyPlans.map(
+                      (plan) =>
+                        renderPlan(
+                          plan,
+                          true
+                        )
+                    )}
                   </div>
-                </div>
+                </section>
+              )}
 
-                <div className="space-y-4">
-                  {regularPlans.map(
-                    (plan) =>
-                      renderPlan(plan)
-                  )}
-                </div>
-              </section>
-            )}
-
-            {dailyPlans.length >
-              0 && (
-              <section className="mt-10">
-                <div className="mb-4">
-                  <div className="roam-kicker">
-                    Daily
+            {activeCategory ===
+              "daily" &&
+              dailyPlans.length ===
+                0 &&
+              plans.length >
+                0 && (
+                <div className="roam-card-soft mt-7 p-7 text-center">
+                  <div className="text-lg font-bold">
+                    Суточных тарифов нет
                   </div>
 
-                  <h2 className="mt-2 text-xl font-bold">
-                    Пакеты на день
-                  </h2>
-
-                  <p className="mt-2 text-xs leading-5 text-white/37">
-                    Дневной объём
-                    обновляется согласно
-                    условиям тарифа.
+                  <p className="mt-2 text-sm text-white/40">
+                    Для этой страны
+                    доступны только
+                    стандартные пакеты.
                   </p>
                 </div>
-
-                <div className="space-y-4">
-                  {dailyPlans.map(
-                    (plan) =>
-                      renderPlan(
-                        plan,
-                        true
-                      )
-                  )}
-                </div>
-              </section>
-            )}
+              )}
 
             {plans.length ===
               0 && (

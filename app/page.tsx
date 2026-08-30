@@ -289,13 +289,13 @@ export default function Home() {
 
         <section className="relative mt-9">
           <div className="roam-kicker">
-            Travel connectivity
+            СВЯЗЬ В ПУТЕШЕСТВИИ
           </div>
 
           <h1 className="roam-title mt-4">
-            Stay connected.
+            Оставайтесь на связи.
             <br />
-            Anywhere.
+            Где угодно.
           </h1>
 
           <p className="roam-subtitle mt-5 max-w-[350px]">
@@ -370,7 +370,7 @@ export default function Home() {
           <div className="mb-5 flex items-end justify-between gap-4">
             <div>
               <div className="roam-kicker">
-                Destinations
+                НАПРАВЛЕНИЯ
               </div>
 
               <h2 className="mt-2 text-2xl font-bold tracking-[-0.035em]">

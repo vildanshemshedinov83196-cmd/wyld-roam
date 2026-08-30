@@ -12,6 +12,7 @@ type SupplierTopup = {
   price?: number;
   currencyCode?: string;
   volume?: number;
+  dataType?: number;
   duration?: number;
   durationUnit?: string;
   locationCode?: string;
@@ -217,7 +218,13 @@ export async function POST(request: NextRequest) {
           (plan.price ?? 0) / 10000;
 
         const retailPrice =
-          calculateRetailPrice(supplierCost);
+          calculateRetailPrice(
+            supplierCost,
+            Number(plan.volume),
+            Number(
+              plan.dataType ?? 1
+            )
+          );
 
         const networks =
           plan.locationNetworkList

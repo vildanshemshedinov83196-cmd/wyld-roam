@@ -1,4 +1,8 @@
 import { NextRequest } from "next/server";
+import {
+  calculateRetailPrice,
+  bytesToReadable,
+} from "@/lib/pricing";
 
 type EsimPackage = {
   packageCode: string;
@@ -26,43 +30,6 @@ type EsimPackage = {
     }>;
   }>;
 };
-
-function bytesToReadable(bytes: number) {
-  const gb = bytes / 1024 / 1024 / 1024;
-
-  if (gb >= 1) {
-    return `${Number(gb.toFixed(2))} GB`;
-  }
-
-  const mb = bytes / 1024 / 1024;
-  return `${Math.round(mb)} MB`;
-}
-
-function calculateRetailPrice(cost: number) {
-  let price: number;
-
-  if (cost <= 0.4) {
-    return 0.99;
-  }
-
-  if (cost <= 1) {
-    return 1.99;
-  }
-
-  if (cost <= 2) {
-    price = cost * 2.5;
-  } else if (cost <= 5) {
-    price = cost * 2.1;
-  } else if (cost <= 10) {
-    price = cost * 1.8;
-  } else if (cost <= 20) {
-    price = cost * 1.7;
-  } else {
-    price = cost * 1.45;
-  }
-
-  return Math.floor(price) + 0.99;
-}
 
 export async function GET(request: NextRequest) {
   const accessCode = process.env.ESIM_ACCESS_CODE;
@@ -127,114 +94,163 @@ export async function GET(request: NextRequest) {
     const packages: EsimPackage[] =
       data.obj?.packageList ?? [];
 
-    const mappedPlans = packages.map((item) => {
-      const wholesalePrice = item.price / 10000;
-
-      const retailPrice =
-        calculateRetailPrice(wholesalePrice);
-
-      const operators =
-        item.locationNetworkList?.flatMap(
-          (location) =>
-            location.operatorList?.map(
-              (operator) => ({
-                name: operator.operatorName,
-                network: operator.networkType,
-              })
-            ) ?? []
-        ) ?? [];
-
-      return {
-        packageCode: item.packageCode,
-        slug: item.slug,
-        name: item.name,
-
-        location: item.location,
-        locationCode: item.locationCode,
-
-        data: bytesToReadable(item.volume),
-        volumeBytes: item.volume,
-
-        duration: item.duration,
-        durationUnit: item.durationUnit,
-
-        speed: item.speed,
-        ipExport: item.ipExport,
-
-        dataType: item.dataType,
-        fupPolicy: item.fupPolicy,
-
-        topUpSupported:
-          item.supportTopUpType > 0,
-
-        retailPrice,
-        currency: item.currencyCode,
-
-        operators,
-
-        // Используется только на сервере для выбора
-        // самого выгодного пакета среди дублей.
-        _wholesalePrice: wholesalePrice,
-      };
-    });
-
     /*
-     * Финальная линейка WYLD ROAM:
+     * WYLD ROAM catalog:
      *
-     * 3 GB  / 30 дней
-     * 5 GB  / 30 дней
-     * 10 GB / 30 дней
-     * 20 GB / 30 дней
-     * 50 GB / 30 дней
+     * STANDARD
+     * 3 / 5 / 10 / 20 / 50 GB
+     * 30 days
      *
-     * Другие объёмы и сроки клиенту не показываем.
-     * Если eSIMAccess возвращает несколько SKU одного объёма,
-     * сначала предпочитаем пополняемый пакет,
-     * затем выбираем самый дешёвый supplier SKU.
+     * DAILY
+     * 1 / 2 / 3 / 5 / 10 GB per day
+     * 1 day
      */
 
-    const allowedVolumes = new Set([
-      "3 GB",
-      "5 GB",
-      "10 GB",
-      "20 GB",
-      "50 GB",
-    ]);
+    const standardVolumes =
+      new Set([
+        "3 GB",
+        "5 GB",
+        "10 GB",
+        "20 GB",
+        "50 GB",
+      ]);
 
-    const eligiblePlans =
-      mappedPlans.filter((plan) => {
-        const unit =
-          plan.durationUnit.toLowerCase();
+    const dailyVolumes =
+      new Set([
+        "1 GB",
+        "2 GB",
+        "3 GB",
+        "5 GB",
+        "10 GB",
+      ]);
 
-        const isThirtyDays =
-          plan.duration === 30 &&
-          unit.includes("day");
-
-        const isAllowedVolume =
-          allowedVolumes.has(
-            plan.data
+    /*
+     * Фильтруем ДО расчёта цены.
+     * Так лишние SKU eSIMAccess
+     * вообще не попадают в pricing.
+     */
+    const eligiblePackages =
+      packages.filter((item) => {
+        const data =
+          bytesToReadable(
+            item.volume
           );
 
-        // dataType 1 = обычный fixed data plan.
-        // Daily/FUP пакеты в финальный каталог не попадают.
-        const isFixedData =
-          plan.dataType === 1;
+        const unit =
+          item.durationUnit
+            .toLowerCase();
+
+        const isStandard =
+          item.dataType === 1 &&
+          item.duration === 30 &&
+          unit.includes("day") &&
+          standardVolumes.has(
+            data
+          );
+
+        const isDaily =
+          item.dataType === 2 &&
+          item.duration === 1 &&
+          unit.includes("day") &&
+          dailyVolumes.has(
+            data
+          );
 
         return (
-          isThirtyDays &&
-          isAllowedVolume &&
-          isFixedData
+          isStandard ||
+          isDaily
         );
       });
+
+    const mappedPlans =
+      eligiblePackages.map(
+        (item) => {
+          const wholesalePrice =
+            item.price / 10000;
+
+          const retailPrice =
+            calculateRetailPrice(
+              wholesalePrice,
+              item.volume,
+              item.dataType
+            );
+
+          const operators =
+            item.locationNetworkList
+              ?.flatMap(
+                (location) =>
+                  location.operatorList
+                    ?.map(
+                      (
+                        operator
+                      ) => ({
+                        name:
+                          operator.operatorName,
+                        network:
+                          operator.networkType,
+                      })
+                    ) ?? []
+              ) ?? [];
+
+          return {
+            packageCode:
+              item.packageCode,
+            slug:
+              item.slug,
+            name:
+              item.name,
+
+            location:
+              item.location,
+            locationCode:
+              item.locationCode,
+
+            data:
+              bytesToReadable(
+                item.volume
+              ),
+            volumeBytes:
+              item.volume,
+
+            duration:
+              item.duration,
+            durationUnit:
+              item.durationUnit,
+
+            speed:
+              item.speed,
+            ipExport:
+              item.ipExport,
+
+            dataType:
+              item.dataType,
+            fupPolicy:
+              item.fupPolicy,
+
+            topUpSupported:
+              item.supportTopUpType >
+              0,
+
+            retailPrice,
+            currency:
+              item.currencyCode,
+
+            operators,
+
+            _wholesalePrice:
+              wholesalePrice,
+          };
+        }
+      );
 
     const uniquePlans = new Map<
       string,
       (typeof mappedPlans)[number]
     >();
 
-    for (const plan of eligiblePlans) {
+    for (const plan of mappedPlans) {
       const duplicateKey =
-        plan.data;
+        `${plan.dataType}:${plan.data}`;
 
       const existing =
         uniquePlans.get(
@@ -282,22 +298,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const volumeOrder =
-      new Map([
-        ["3 GB", 3],
-        ["5 GB", 5],
-        ["10 GB", 10],
-        ["20 GB", 20],
-        ["50 GB", 50],
-      ]);
-
     const plans = Array.from(
       uniquePlans.values()
     )
       .sort(
-        (a, b) =>
-          (volumeOrder.get(a.data) ?? 999) -
-          (volumeOrder.get(b.data) ?? 999)
+        (a, b) => {
+          if (
+            a.dataType !==
+            b.dataType
+          ) {
+            return (
+              a.dataType -
+              b.dataType
+            );
+          }
+
+          return (
+            a.volumeBytes -
+            b.volumeBytes
+          );
+        }
       )
       .map(
         ({

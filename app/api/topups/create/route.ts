@@ -24,6 +24,7 @@ type SupplierPlan = {
   name?: string;
   price?: number;
   volume?: number;
+  dataType?: number;
   duration?: number;
   durationUnit?: string;
   locationCode?: string;
@@ -294,7 +295,11 @@ export async function POST(
 
     const amount =
       calculateRetailPrice(
-        supplierCost
+        supplierCost,
+        Number(plan.volume),
+        Number(
+          plan.dataType ?? 1
+        )
       );
 
     const {

@@ -375,16 +375,18 @@ export default function PlansPage() {
         }`}
       >
         {!daily && (
-          <div
-            className={`absolute right-4 top-4 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
-              isPopular
-                ? "bg-violet-500 text-white shadow-[0_0_20px_rgba(139,92,246,0.35)]"
-                : "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-            }`}
-          >
-            {isPopular
-              ? "★ ПОПУЛЯРНЫЙ"
-              : "ВЫГОДНО"}
+          <div className="mb-3 flex justify-end">
+            <div
+              className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+                isPopular
+                  ? "bg-violet-500 text-white shadow-[0_0_20px_rgba(139,92,246,0.35)]"
+                  : "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+              }`}
+            >
+              {isPopular
+                ? "★ ПОПУЛЯРНЫЙ"
+                : "ВЫГОДНО"}
+            </div>
           </div>
         )}
         <div className="flex items-start justify-between gap-4">

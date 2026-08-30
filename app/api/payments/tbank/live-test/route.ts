@@ -76,13 +76,28 @@ export async function POST() {
       qrData: qr.Data,
     });
   } catch (error) {
+    const err =
+      error instanceof Error
+        ? (error as Error & {
+            cause?: {
+              code?: string;
+              message?: string;
+            };
+          })
+        : null;
+
     return NextResponse.json(
       {
         ok: false,
         error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error",
+          err?.message ??
+          "Unknown error",
+        causeCode:
+          err?.cause?.code ??
+          null,
+        causeMessage:
+          err?.cause?.message ??
+          null,
       },
       { status: 500 }
     );

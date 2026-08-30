@@ -10,9 +10,15 @@ function getConfig() {
   const password =
     process.env.TBANK_PASSWORD;
 
-  if (!terminalKey || !password) {
+  if (!terminalKey) {
     throw new Error(
-      "T-Bank environment variables are not configured"
+      "TBANK_TERMINAL_KEY is not configured"
+    );
+  }
+
+  if (!password) {
+    throw new Error(
+      "TBANK_PASSWORD is not configured"
     );
   }
 

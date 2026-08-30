@@ -207,10 +207,10 @@ export async function POST(
             "https://wyld-roam.vercel.app/api/payments/heleket/webhook",
 
           url_return:
-            "https://wyld-roam.vercel.app/esims",
+            "https://wyld-roam.vercel.app/my-esims",
 
           url_success:
-            "https://wyld-roam.vercel.app/esims",
+            "https://wyld-roam.vercel.app/my-esims",
 
           lifetime:
             3600,

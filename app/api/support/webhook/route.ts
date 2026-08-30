@@ -4,6 +4,9 @@ type TelegramUpdate = {
   message?: {
     message_id: number;
     text?: string;
+    reply_to_message?: {
+      text?: string;
+    };
     chat: {
       id: number;
       type: string;
@@ -41,6 +44,9 @@ const OWNER_CHAT_ID =
 
 const CATEGORY_PREFIX =
   "support_category:";
+
+const supportCategories =
+  new Map<number, string>();
 
 function apiUrl(method: string) {
   if (!BOT_TOKEN) {
@@ -87,9 +93,25 @@ async function telegram(
   return result;
 }
 
+function categoryName(
+  category: string
+) {
+  if (category === "payment") {
+    return "Проблема с оплатой";
+  }
+
+  if (category === "esim") {
+    return "Проблема с eSIM";
+  }
+
+  return "Другой вопрос";
+}
+
 async function sendWelcome(
   chatId: number
 ) {
+  supportCategories.delete(chatId);
+
   await telegram("sendMessage", {
     chat_id: chatId,
     text:
@@ -126,20 +148,6 @@ async function sendWelcome(
   });
 }
 
-function categoryName(
-  category: string
-) {
-  if (category === "payment") {
-    return "Проблема с оплатой";
-  }
-
-  if (category === "esim") {
-    return "Проблема с eSIM";
-  }
-
-  return "Другой вопрос";
-}
-
 async function handleCategory(
   update: NonNullable<
     TelegramUpdate["callback_query"]
@@ -161,6 +169,11 @@ async function handleCategory(
     return;
   }
 
+  supportCategories.set(
+    chatId,
+    category
+  );
+
   await telegram(
     "answerCallbackQuery",
     {
@@ -176,36 +189,90 @@ async function handleCategory(
         category
       )}.\n\n` +
       "Опишите проблему одним сообщением. " +
-      "Если вопрос связан с заказом, можете указать страну и приблизительное время покупки.",
+      "Если вопрос связан с заказом, укажите страну и приблизительное время покупки.",
     reply_markup: {
       force_reply: true,
       input_field_placeholder:
         "Опишите проблему...",
     },
   });
-
-  await telegram("sendMessage", {
-    chat_id: chatId,
-    text:
-      `SUPPORT_CATEGORY:${category}`,
-    disable_notification: true,
-  });
 }
 
-async function getRecentCategory(
-  chatId: number
+function parseClientId(
+  text?: string
 ) {
-  /*
-   * Для первой версии не храним состояние в БД.
-   * Категория определяется по последнему сообщению-маркеру,
-   * но Telegram Bot API не даёт читать историю.
-   *
-   * Поэтому если пользователь просто пишет текст,
-   * считаем его общим обращением.
-   *
-   * Позже при желании вынесем состояние в Supabase.
-   */
-  return "other";
+  if (!text) {
+    return null;
+  }
+
+  const match =
+    text.match(
+      /Telegram ID:\s*(\d+)/
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  return Number(match[1]);
+}
+
+async function handleOwnerReply(
+  message: NonNullable<
+    TelegramUpdate["message"]
+  >
+) {
+  if (
+    !OWNER_CHAT_ID ||
+    String(message.chat.id) !==
+      String(OWNER_CHAT_ID)
+  ) {
+    return false;
+  }
+
+  const replyText =
+    message.text?.trim();
+
+  const repliedMessage =
+    message.reply_to_message?.text;
+
+  if (
+    !replyText ||
+    !repliedMessage
+  ) {
+    return false;
+  }
+
+  const clientId =
+    parseClientId(
+      repliedMessage
+    );
+
+  if (!clientId) {
+    return false;
+  }
+
+  await telegram(
+    "sendMessage",
+    {
+      chat_id: clientId,
+      text:
+        "💬 Ответ поддержки WYLD ROAM\n\n" +
+        replyText,
+    }
+  );
+
+  await telegram(
+    "sendMessage",
+    {
+      chat_id:
+        OWNER_CHAT_ID,
+      text:
+        "✅ Ответ отправлен клиенту.",
+    }
+  );
+
+  return true;
 }
 
 async function forwardToOwner(
@@ -223,22 +290,21 @@ async function forwardToOwner(
     message.text?.trim();
 
   if (!text) {
-    await telegram("sendMessage", {
-      chat_id: message.chat.id,
-      text:
-        "Пока поддерживаются текстовые обращения. " +
-        "Опишите проблему сообщением.",
-    });
+    await telegram(
+      "sendMessage",
+      {
+        chat_id:
+          message.chat.id,
+        text:
+          "Пока поддерживаются текстовые обращения. " +
+          "Опишите проблему сообщением.",
+      }
+    );
 
     return;
   }
 
-  if (
-    text === "/start" ||
-    text.startsWith(
-      "SUPPORT_CATEGORY:"
-    )
-  ) {
+  if (text === "/start") {
     return;
   }
 
@@ -258,9 +324,9 @@ async function forwardToOwner(
       : "нет";
 
   const category =
-    await getRecentCategory(
+    supportCategories.get(
       message.chat.id
-    );
+    ) ?? "other";
 
   const ownerText =
     "🆘 Новое обращение WYLD ROAM\n\n" +
@@ -270,19 +336,32 @@ async function forwardToOwner(
     `Имя: ${fullName || "не указано"}\n` +
     `Username: ${username}\n` +
     `Telegram ID: ${message.chat.id}\n\n` +
-    `Сообщение:\n${text}`;
+    `Сообщение:\n${text}\n\n` +
+    "↩️ Чтобы ответить клиенту, ответьте прямо на это сообщение.";
 
-  await telegram("sendMessage", {
-    chat_id: OWNER_CHAT_ID,
-    text: ownerText,
-  });
+  await telegram(
+    "sendMessage",
+    {
+      chat_id:
+        OWNER_CHAT_ID,
+      text: ownerText,
+    }
+  );
 
-  await telegram("sendMessage", {
-    chat_id: message.chat.id,
-    text:
-      "✅ Обращение отправлено в поддержку.\n\n" +
-      "Мы получили ваше сообщение и ответим в Telegram.",
-  });
+  supportCategories.delete(
+    message.chat.id
+  );
+
+  await telegram(
+    "sendMessage",
+    {
+      chat_id:
+        message.chat.id,
+      text:
+        "✅ Обращение отправлено в поддержку.\n\n" +
+        "Мы получили ваше сообщение и ответим здесь, в Telegram.",
+    }
+  );
 }
 
 export async function POST(
@@ -307,6 +386,16 @@ export async function POST(
     }
 
     if (update.message) {
+      if (
+        await handleOwnerReply(
+          update.message
+        )
+      ) {
+        return NextResponse.json({
+          ok: true,
+        });
+      }
+
       if (
         update.message.text ===
         "/start"

@@ -350,14 +350,18 @@ export default function PlansPage() {
     plan: Plan,
     daily = false
   ) {
-    const isPopular =
-      !daily &&
+    const planGb =
       Math.round(
         plan.volumeBytes /
           1024 /
           1024 /
           1024
-      ) === 20;
+      );
+
+    const isPopular =
+      daily
+        ? planGb === 5
+        : planGb === 20;
 
     return (
       <button
@@ -374,21 +378,19 @@ export default function PlansPage() {
             : ""
         }`}
       >
-        {!daily && (
-          <div className="mb-3 flex justify-end">
-            <div
-              className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
-                isPopular
-                  ? "bg-violet-500 text-white shadow-[0_0_20px_rgba(139,92,246,0.35)]"
-                  : "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-              }`}
-            >
-              {isPopular
-                ? "★ ПОПУЛЯРНЫЙ"
-                : "ВЫГОДНО"}
-            </div>
+        <div className="mb-3 flex justify-end">
+          <div
+            className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+              isPopular
+                ? "bg-violet-500 text-white shadow-[0_0_20px_rgba(139,92,246,0.35)]"
+                : "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+            }`}
+          >
+            {isPopular
+              ? "★ ПОПУЛЯРНЫЙ"
+              : "ВЫГОДНО"}
           </div>
-        )}
+        </div>
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="roam-chip">

@@ -47,6 +47,12 @@ type TelegramUpdate = {
       id: number;
     };
 
+    chat?: {
+      id: number;
+    };
+
+    text?: string;
+
     successful_payment?:
       TelegramSuccessfulPayment;
   };
@@ -115,6 +121,103 @@ export async function POST(
 
     const update =
       (await request.json()) as TelegramUpdate;
+
+    /*
+     * ======================================================
+     * WELCOME / START
+     * ======================================================
+     */
+    const messageText =
+      update.message?.text
+        ?.trim();
+
+    const chatId =
+      update.message?.chat?.id;
+
+    if (
+      chatId &&
+      messageText?.startsWith(
+        "/start"
+      )
+    ) {
+      const telegramResponse =
+        await fetch(
+          `https://api.telegram.org/bot${botToken}/sendMessage`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              chat_id:
+                chatId,
+
+              parse_mode:
+                "HTML",
+
+              text:
+                [
+                  "👋 <b>Добро пожаловать в WYLD ROAM</b>",
+                  "",
+                  "🌍 eSIM для путешествий по всему миру.",
+                  "",
+                  "• Интернет в 190+ странах",
+                  "• Быстрое подключение",
+                  "• Без физической SIM-карты",
+                  "• Управление eSIM прямо в Telegram",
+                  "",
+                  "Выберите направление и подключите интернет за несколько минут. ✈️",
+                ].join("\n"),
+
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text:
+                        "🌍 Открыть WYLD ROAM",
+
+                      web_app: {
+                        url:
+                          "https://wyld-roam.vercel.app",
+                      },
+                    },
+                  ],
+
+                  [
+                    {
+                      text:
+                        "💬 Поддержка",
+
+                      url:
+                        "https://t.me/wyld_roam_support_bot",
+                    },
+                  ],
+                ],
+              },
+            }),
+          }
+        );
+
+      const telegramResult =
+        await telegramResponse.json();
+
+      if (
+        !telegramResponse.ok ||
+        !telegramResult.ok
+      ) {
+        console.error(
+          "WYLD ROAM /start error:",
+          telegramResult
+        );
+      }
+
+      return Response.json({
+        ok: true,
+      });
+    }
 
     /*
      * ======================================================
